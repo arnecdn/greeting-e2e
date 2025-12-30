@@ -4,8 +4,10 @@ use thiserror::Error;
 use crate::api::{load_e2e_config};
 
 mod api;
+mod test_runner;
 
-fn main() -> Result<(), E2EError>{
+#[tokio::main]
+async fn main() -> Result<(), E2EError>{
     let args = CliArgs::parse();
     let cfg = load_e2e_config(&args.config_path)?;
 
