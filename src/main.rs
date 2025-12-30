@@ -1,16 +1,13 @@
-use std::{fs, io};
-use std::path::Path;
 use clap::Parser;
 use confy::ConfyError;
-use serde::{Deserialize, Serialize};
-use crate::api::{load_e22_config, CliArgs, E2ETestConfig};
+use thiserror::Error;
+use crate::api::{load_e2e_config};
 
 mod api;
 
-
 fn main() -> Result<(), E2EError>{
     let args = CliArgs::parse();
-    let cfg = load_e22_config(&args.config_path)?;
+    let cfg = load_e2e_config(&args.config_path)?;
 
     println!("E2E config: {:?}", cfg);
     Ok(())
@@ -23,14 +20,18 @@ fn main() -> Result<(), E2EError>{
 //     verify all greetings are stored and accessible via API checks
 }
 
-
-#[derive(Debug)]
-struct E2EError{
-    message:String
+/// Runs e2e test for greeting-solution.
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+pub(crate) struct CliArgs {
+    /// Path to configfile. If missing, a template file with default values is created.
+    #[arg(short = 'c', long = "config")]
+    pub config_path: String,
 }
 
-impl From<ConfyError> for E2EError {
-    fn from(value: ConfyError) -> Self {
-        E2EError{message:value.to_string()}
-    }
+
+#[derive(Error, Debug)]
+enum E2EError{
+    #[error("E2E config error: {0}")]
+    ConfigError(#[from] ConfyError),
 }
