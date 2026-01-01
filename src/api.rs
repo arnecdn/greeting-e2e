@@ -6,7 +6,7 @@ use std::path::Path;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct E2ETestConfig {
     pub greeting_receiver_url: String,
-    pub greeting_api_logg_url: String,
+    pub greeting_api_url: String,
     pub num_iterations: i8,
     pub num_clients: i8,
 }
@@ -14,8 +14,8 @@ pub struct E2ETestConfig {
 impl Default for E2ETestConfig {
     fn default() -> Self {
         E2ETestConfig {
-            greeting_receiver_url: "http://localhost:80800".to_string(),
-            greeting_api_logg_url: "http://localhost:80800".to_string(),
+            greeting_receiver_url: "http://localhost:8080".to_string(),
+            greeting_api_url: "http://localhost:8080".to_string(),
             num_iterations: 0,
             num_clients: 0,
         }
@@ -26,6 +26,6 @@ pub(crate) fn load_e2e_config(path: &str) -> Result<E2ETestConfig, ConfyError> {
     let config_path = Path::new(&path);
     info!("Loading E2E config from: {:?}", config_path);
     let cfg: E2ETestConfig = confy::load_path(config_path)?;
-    info!("Loaded E2E config: {:?}", cfg);
+
     Ok(cfg)
 }

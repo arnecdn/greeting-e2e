@@ -1,7 +1,9 @@
 use clap::Parser;
 use confy::ConfyError;
+use log::info;
 use thiserror::Error;
 use crate::api::{load_e2e_config};
+use crate::greeting_api_service::GreetingApiClient;
 
 mod api;
 mod greeting_api_service;
@@ -10,8 +12,11 @@ mod greeting_api_service;
 async fn main() -> Result<(), E2EError>{
     let args = CliArgs::parse();
     let cfg = load_e2e_config(&args.config_path)?;
+    info!("Loaded E2E config: {:?}", cfg);
 
-    println!("E2E config: {:?}", cfg);
+    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
+    let last_log_entry = greeting_api_client.get_last_log_entry().await?;
+    info!("The latest loggentry from Greeting-api is: {:?}",last_log_entry);
     Ok(())
 //     load config and testspec
 //         number of messages
@@ -36,4 +41,6 @@ pub(crate) struct CliArgs {
 enum E2EError{
     #[error("E2E config error: {0}")]
     ConfigError(#[from] ConfyError),
+    #[error("Client error: {0}")]
+    ClientError(#[from] reqwest::Error),
 }
