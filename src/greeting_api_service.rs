@@ -12,7 +12,7 @@ pub struct LoggQuery {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialOrd, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct GreetingLoggEntry {
-    id: i64,
+    pub(crate) id: i64,
     greeting_id: i64,
     created: DateTime<Utc>,
 }
@@ -23,16 +23,16 @@ pub struct GreetingApiClient {
 }
 
 impl GreetingApiClient {
-    pub async fn get_last_log_entry(&self) -> Result<GreetingLoggEntry, reqwest::Error> {
+    pub async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error> {
         let response = self.client
             .get(format!("{}/log/last", &self.url))
             .send()
             .await?;
 
-        if response.status().is_success(){
-            response.json::<GreetingLoggEntry>().await
-        }else {
-            Err(response.error_for_status().unwrap_err())
+        match response.status().as_str() {
+            "200" => Ok(Some(response.json::<GreetingLoggEntry>().await?)),
+            "204" => Ok(None),
+            _ => Err(response.error_for_status().unwrap_err())
         }
     }
 
@@ -55,7 +55,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
-    async fn shall_get_last_logg_entry()  {
+    async fn shaould_get_last_logg_entry()  {
 
         let created_date_time = DateTime::parse_from_rfc3339("2025-12-30T08:01:10.130Z")
             .unwrap().with_timezone(&Utc);
@@ -74,13 +74,13 @@ mod tests {
             .await;
 
         let greeting_api_client = GreetingApiClient::new_client(mock_server.uri());
-        let greeting_log_entry = greeting_api_client.get_last_log_entry().await;
+        let greeting_log_entry = greeting_api_client.get_last_log_entry().await.expect("Expeced logentry");
 
         assert_eq!(greeting_log_entry.unwrap(), last_log_entry);
     }
 
     #[tokio::test]
-     async fn shall_fail_with_http_4xx()  {
+     async fn shall_fail_with_http_5xx()  {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("GET"))

@@ -1,5 +1,4 @@
 use confy::ConfyError;
-use log::info;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -24,7 +23,6 @@ impl Default for E2ETestConfig {
 
 pub(crate) fn load_e2e_config(path: &str) -> Result<E2ETestConfig, ConfyError> {
     let config_path = Path::new(&path);
-    info!("Loading E2E config from: {:?}", config_path);
     let cfg: E2ETestConfig = confy::load_path(config_path)?;
 
     Ok(cfg)

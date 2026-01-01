@@ -1,7 +1,8 @@
 use clap::Parser;
 use confy::ConfyError;
-use log::info;
+use tracing::info;
 use thiserror::Error;
+use tracing::Level;
 use crate::api::{load_e2e_config};
 use crate::greeting_api_service::GreetingApiClient;
 
@@ -10,13 +11,22 @@ mod greeting_api_service;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError>{
+    // FmtSubscriber logs to stdout by default
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .init();
+
     let args = CliArgs::parse();
     let cfg = load_e2e_config(&args.config_path)?;
     info!("Loaded E2E config: {:?}", cfg);
 
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
-    let last_log_entry = greeting_api_client.get_last_log_entry().await?;
-    info!("The latest loggentry from Greeting-api is: {:?}",last_log_entry);
+    let offset = if let Some(last_log_entry) = greeting_api_client.get_last_log_entry().await?{
+        last_log_entry.id
+    }else {
+        0
+    };
+    info!("Log entry id offset: {}", offset);
     Ok(())
 //     load config and testspec
 //         number of messages
@@ -32,7 +42,7 @@ async fn main() -> Result<(), E2EError>{
 #[command(version, about, long_about = None)]
 pub(crate) struct CliArgs {
     /// Path to configfile. If missing, a template file with default values is created.
-    #[arg(short = 'c', long = "config")]
+    #[arg(short = 'c', long = "greeting-e2e-test-config", env="greeting-e2e-test-config")]
     pub config_path: String,
 }
 
