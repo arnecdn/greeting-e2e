@@ -4,7 +4,7 @@ use thiserror::Error;
 use crate::api::{load_e2e_config};
 
 mod api;
-mod test_runner;
+mod greeting_api_service;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError>{
