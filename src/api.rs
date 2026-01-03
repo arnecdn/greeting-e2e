@@ -6,9 +6,9 @@ use std::path::Path;
 pub struct E2ETestConfig {
     pub greeting_receiver_url: String,
     pub greeting_api_url: String,
-    pub greeting_log_limit: u8,
-    pub num_iterations: i8,
-    pub num_clients: i8,
+    pub greeting_log_limit: u16,
+    pub num_iterations: u16,
+    pub num_clients: u8,
 }
 
 impl Default for E2ETestConfig {

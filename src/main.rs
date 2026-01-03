@@ -4,6 +4,8 @@ use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingRec
 use clap::Parser;
 use confy::ConfyError;
 use std::collections::HashMap;
+use std::thread;
+use std::thread::Thread;
 use thiserror::Error;
 use tracing::info;
 use tracing::Level;
@@ -51,6 +53,10 @@ async fn main() -> Result<(), E2EError> {
     }
     let mut current_offset = offset;
 
+    while current_offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
     while true {
         info!("Checking log entries from offset-id: {:?}", current_offset);
         let mut log_entries = greeting_api_client
@@ -58,17 +64,25 @@ async fn main() -> Result<(), E2EError> {
             .await?;
 
         info!("Found {:?} entries from offset-id: {}", &log_entries.len(), offset);
-        log_entries.sort_by(|a,b| a.id.cmp(&b.id));
         current_offset = log_entries.iter().map(|l|l.id).max().or_else(||Some(offset)).unwrap();
 
         for log_entry in log_entries {
             if let Some(entry)= test_contexts.get_mut(&log_entry.external_reference){
                 entry.greeting_logg_entry = Some(log_entry.clone());
-                info!("Verified logg-id: {:?}", log_entry.id);
             }
         }
 
-        if test_contexts.iter().all(|e| e.1.greeting_logg_entry .is_some()){
+        if test_contexts.iter().all(|e| e.1.greeting_logg_entry.is_some()){
+            for ctx in test_contexts{
+                let msg = ctx.1.message;
+                let gle = ctx.1.greeting_logg_entry.unwrap();
+
+                info!("Verified logg-id: {:?}, greeting.created: {:?}, log.created: {:?}",
+                    gle.id,
+                    msg.created,
+                    gle.created
+                );
+            }
             info!("All messages verified on log");
             break;
         }
@@ -76,19 +90,13 @@ async fn main() -> Result<(), E2EError> {
     }
 
     Ok(())
-    //     load config and testspec
-    //         number of messages
-    //         number of clients
-    //     get latest log entry
-    //     generate greetings
-    //     send greetings
-    //     verify all greetings are stored and accessible via API checks
 }
+#[derive(Debug)]
 struct TestContext {
     external_reference: String,
     message_id: String,
-    message: GreetingCmd,
-    greeting_logg_entry: Option<GreetingLoggEntry>,
+    pub message: GreetingCmd,
+    pub greeting_logg_entry: Option<GreetingLoggEntry>,
 }
 /// Runs e2e test for greeting-solution.
 #[derive(Parser)]

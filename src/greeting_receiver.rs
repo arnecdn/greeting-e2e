@@ -13,7 +13,7 @@ pub struct GreetingCmd {
     from: String,
     heading: String,
     message: String,
-    created: DateTime<Utc>,
+    pub (crate) created: DateTime<Utc>,
 }
 #[derive(Serialize, Deserialize, Debug, PartialOrd, PartialEq)]
 #[serde(rename_all = "camelCase")]

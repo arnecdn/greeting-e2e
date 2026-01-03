@@ -14,9 +14,9 @@ pub struct LoggQuery {
 #[serde(rename_all = "camelCase")]
 pub struct GreetingLoggEntry {
     pub(crate) id: i64,
-    greeting_id: i64,
+    pub(crate) greeting_id: i64,
     pub(crate) external_reference: String,
-    created: DateTime<Utc>,
+    pub(crate) created: DateTime<Utc>,
 }
 
 pub struct GreetingApiClient {
@@ -47,7 +47,7 @@ impl GreetingApiClient {
     pub async fn get_log_entries(
         &self,
         offset: i64,
-        limit: u8,
+        limit: u16,
     ) -> Result<Vec<GreetingLoggEntry>, reqwest::Error> {
         let response = self
             .client
