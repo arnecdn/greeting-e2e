@@ -10,12 +10,12 @@ pub struct LoggQuery {
     offset: i64,
     limit: i8,
 }
-#[derive(Serialize, Deserialize, Clone, Debug, PartialOrd, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GreetingLoggEntry {
     pub(crate) id: i64,
     greeting_id: i64,
-    external_reference: String,
+    pub(crate) external_reference: String,
     created: DateTime<Utc>,
 }
 

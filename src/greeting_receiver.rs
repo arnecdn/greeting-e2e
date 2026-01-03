@@ -8,7 +8,7 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GreetingCmd {
-    external_reference: String,
+    pub(crate) external_reference: String,
     to: String,
     from: String,
     heading: String,
