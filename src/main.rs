@@ -40,16 +40,15 @@ async fn main() -> Result<(), E2EError> {
             acc
         });
 
-    let mut test_contexts = HashMap::new();
+    let mut tasks = HashMap::new();
     for m in test_messages {
         let resp = greeting_receiver_client.send(m.clone()).await?;
-        let c = TestContext {
-            message_id: resp.message_id,
+        let task = TestTask {
             external_reference: m.external_reference.to_string(),
             message: m,
             greeting_logg_entry: None,
         };
-        test_contexts.insert(c.external_reference.to_string(), c);
+        tasks.insert(task.external_reference.to_string(), task);
     }
     let mut current_offset = offset;
 
@@ -57,44 +56,48 @@ async fn main() -> Result<(), E2EError> {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    while true {
+    loop {
         info!("Checking log entries from offset-id: {:?}", current_offset);
         let mut log_entries = greeting_api_client
-            .get_log_entries(current_offset+1, cfg.greeting_log_limit)
+            .get_log_entries(current_offset + 1, cfg.greeting_log_limit)
             .await?;
 
         info!("Found {:?} entries from offset-id: {}", &log_entries.len(), offset);
-        current_offset = log_entries.iter().map(|l|l.id).max().or_else(||Some(offset)).unwrap();
+        current_offset = log_entries.iter().map(|l| l.id).max().or_else(|| Some(offset)).unwrap();
 
         for log_entry in log_entries {
-            if let Some(entry)= test_contexts.get_mut(&log_entry.external_reference){
+            if let Some(entry) = tasks.get_mut(&log_entry.external_reference) {
                 entry.greeting_logg_entry = Some(log_entry.clone());
             }
         }
 
-        if test_contexts.iter().all(|e| e.1.greeting_logg_entry.is_some()){
-            for ctx in test_contexts{
-                let msg = ctx.1.message;
-                let gle = ctx.1.greeting_logg_entry.unwrap();
-
-                info!("Verified logg-id: {:?}, greeting.created: {:?}, log.created: {:?}",
-                    gle.id,
-                    msg.created,
-                    gle.created
-                );
-            }
-            info!("All messages verified on log");
+        if tasks.iter().all(|e| e.1.greeting_logg_entry.is_some()) {
+            printTestResult(&mut tasks);
             break;
         }
-
     }
 
     Ok(())
 }
+
+
+fn printTestResult(tasks: &mut HashMap<String, TestTask>) {
+    for ctx in tasks {
+        let msg = &ctx.1.message;
+        let gle = &ctx.1.greeting_logg_entry.as_ref().unwrap();
+
+        info!("Verified logg-id: {:?}, greeting.created: {:?}, log.created: {:?}",
+                    gle.id,
+                    msg.created,
+                    gle.created
+                );
+    }
+    info!("All messages verified");
+}
+
 #[derive(Debug)]
-struct TestContext {
-    external_reference: String,
-    message_id: String,
+struct TestTask {
+    pub external_reference: String,
     pub message: GreetingCmd,
     pub greeting_logg_entry: Option<GreetingLoggEntry>,
 }

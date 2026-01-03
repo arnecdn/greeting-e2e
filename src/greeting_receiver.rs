@@ -73,8 +73,6 @@ pub fn generate_random_message() -> GreetingCmd {
 #[cfg(test)]
 mod tests {
     use crate::greeting_receiver::{GreetingCmd, GreetingReceiverClient, GreetingResponse};
-    use chrono::Utc;
-    use uuid::Uuid;
     use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
