@@ -4,10 +4,12 @@ use tracing::info;
 use thiserror::Error;
 use tracing::Level;
 use crate::api::{load_e2e_config};
-use crate::greeting_api_service::GreetingApiClient;
+use crate::greeting_api::GreetingApiClient;
+use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingReceiverClient};
 
 mod api;
-mod greeting_api_service;
+mod greeting_api;
+mod greeting_receiver;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError>{
@@ -26,7 +28,28 @@ async fn main() -> Result<(), E2EError>{
     }else {
         0
     };
+
     info!("Log entry id offset: {}", offset);
+    let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url);
+
+    let test_messages = (0..cfg.num_iterations).map(|_|generate_random_message())
+        .fold(vec![],|mut acc, m| {
+            acc.push(m);
+        acc
+        });
+
+    let mut test_context = vec![];
+    for m in test_messages{
+        let resp = greeting_receiver_client.send(m.clone()).await?;
+        let c = TestContext{
+            message: m,
+            resp_message_id: resp.message_id
+        };
+        test_context.push(c);
+    }
+
+    let log_entries = greeting_api_client.get_log_entries(offset, cfg.greeting_log_limit).await?;
+    info!("Found logentries: {:?}", log_entries);
     Ok(())
 //     load config and testspec
 //         number of messages
@@ -36,7 +59,10 @@ async fn main() -> Result<(), E2EError>{
 //     send greetings
 //     verify all greetings are stored and accessible via API checks
 }
-
+struct TestContext{
+    message: GreetingCmd,
+    resp_message_id: String
+}
 /// Runs e2e test for greeting-solution.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

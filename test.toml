@@ -1,4 +1,0 @@
-greeting_receiver_url = "http://localhost:8080"
-greeting_api_url = "http://localhost:8080"
-num_iterations = 0
-num_clients = 0
