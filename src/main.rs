@@ -3,15 +3,16 @@ use crate::greeting_api::{GreetingApiClient, GreetingLoggEntry};
 use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingReceiverClient};
 use clap::Parser;
 use confy::ConfyError;
+use log::error;
 use std::collections::HashMap;
 use std::str::FromStr;
-use log::error;
 use thiserror::Error;
-use time::sleep;
+use time::{sleep, Duration};
 use tokio::time;
-use tracing::{debug, info};
-use tracing::Level;
+use tokio::time::timeout;
 use tracing::metadata::ParseLevelError;
+use tracing::Level;
+use tracing::{debug, info};
 
 mod api;
 mod greeting_api;
@@ -22,7 +23,9 @@ async fn main() -> Result<(), E2EError> {
     // FmtSubscriber logs to stdout by default
     let args = CliArgs::parse();
 
-    tracing_subscriber::fmt().with_max_level(Level::from_str(&args.logging)?).init();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::from_str(&args.logging)?)
+        .init();
 
     let cfg = load_e2e_config(&args.config_path)?;
     info!("Loaded E2E config: {:?}", cfg);
@@ -42,6 +45,7 @@ async fn main() -> Result<(), E2EError> {
         .map(|m| TestTask {
             external_reference: m.external_reference.to_string(),
             message: m,
+            message_id: None,
             greeting_logg_entry: None,
         })
         .fold(HashMap::new(), |mut acc, t| {
@@ -50,24 +54,39 @@ async fn main() -> Result<(), E2EError> {
         });
     info!("Generated {} test tasks", &tasks.len());
 
-    for t in &tasks {
-        greeting_receiver_client.send(t.1.message.clone()).await?;
-        debug!("Sent message: {:?}", t.1.message.external_reference);
+    for t in &mut tasks {
+        debug!("Sending message: {:?}", &t.1.message.external_reference);
+        let resp = greeting_receiver_client.send(t.1.message.clone()).await;
+        match resp {
+            Ok(v) => t.1.message_id = Some(v.message_id),
+            Err(e) => error!(
+                "Error sending message.external_reference: {}, {}",
+                &t.1.external_reference, e
+            ),
+        }
     }
 
     let mut current_offset = offset;
 
-    while current_offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
-        sleep(std::time::Duration::from_secs(1)).await;
-    }
+    const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
+    wait_for_new_log_entry(&greeting_api_client, current_offset, GREETING_API_RESPONSE_TIMEOUT_SECS).await?;
 
     loop {
         let log_entries = greeting_api_client
             .get_log_entries(current_offset + 1, cfg.greeting_log_limit)
             .await?;
 
-        debug!("Found {:?} entries from offset-id: {}", &log_entries.len(), offset);
-        let temp_offset = log_entries.iter().map(|l| l.id).max().or_else(|| Some(offset)).unwrap();
+        debug!(
+            "Found {:?} entries from offset-id: {}",
+            &log_entries.len(),
+            offset
+        );
+        let temp_offset = log_entries
+            .iter()
+            .map(|l| l.id)
+            .max()
+            .or_else(|| Some(offset))
+            .unwrap();
 
         for log_entry in log_entries {
             if let Some(entry) = tasks.get_mut(&log_entry.external_reference) {
@@ -75,7 +94,9 @@ async fn main() -> Result<(), E2EError> {
             }
         }
 
-        if tasks.iter().all(|e| e.1.greeting_logg_entry.is_some()) {
+        if tasks.iter().all(|e| e.1.greeting_logg_entry.is_some())
+            && tasks.iter().all(|e| e.1.message_id.is_some())
+        {
             print_test_result(&mut tasks);
             break;
         }
@@ -86,18 +107,28 @@ async fn main() -> Result<(), E2EError> {
     Ok(())
 }
 
+async fn wait_for_new_log_entry(greeting_api_client: &GreetingApiClient, current_offset: i64, wait_timeout: u64) -> Result<(), E2EError> {
+    timeout(Duration::from_secs(wait_timeout), async {
+        while current_offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
+            time::sleep(Duration::from_secs(1)).await;
+        }
+        Ok::<(), E2EError>(())
+    })
+        .await
+        .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
+    Ok(())
+}
 
 fn print_test_result(tasks: &mut HashMap<String, TestTask>) {
-    info!("Successfully verified {} test-tasks",&tasks.len());
+    info!("Successfully verified {} test-tasks", &tasks.len());
     for ctx in tasks {
         let msg = &ctx.1.message;
         let gle = &ctx.1.greeting_logg_entry.as_ref().unwrap();
 
-        debug!("Verified logg-id: {:?}, greeting.created: {:?}, log.created: {:?}",
-                    gle.id,
-                    msg.created,
-                    gle.created
-                );
+        debug!(
+            "Verified logg-id: {:?}, greeting.created: {:?}, log.created: {:?}",
+            gle.id, msg.created, gle.created
+        );
     }
 }
 
@@ -105,6 +136,7 @@ fn print_test_result(tasks: &mut HashMap<String, TestTask>) {
 struct TestTask {
     pub external_reference: String,
     pub message: GreetingCmd,
+    pub message_id: Option<String>,
     pub greeting_logg_entry: Option<GreetingLoggEntry>,
 }
 /// Runs e2e test for greeting-solution.
@@ -137,4 +169,6 @@ enum E2EError {
     LoggParseError(#[from] ParseLevelError),
     #[error("Client error: {0}")]
     ClientError(#[from] reqwest::Error),
+    #[error("Timeout error: {0}")]
+    TimeoutError(String),
 }

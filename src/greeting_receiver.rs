@@ -31,7 +31,11 @@ impl GreetingReceiverClient {
         Url::parse(&url).expect("Invalid url");
 
         GreetingReceiverClient {
-            client: reqwest::Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(1))
+                .build()
+                .expect("Failed to build client"),
+
             url,
         }
     }
