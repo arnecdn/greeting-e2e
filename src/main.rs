@@ -7,8 +7,11 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use log::error;
 use thiserror::Error;
+use time::sleep;
+use tokio::time;
 use tracing::{debug, info};
 use tracing::Level;
+use tracing::metadata::ParseLevelError;
 
 mod api;
 mod greeting_api;
@@ -19,7 +22,7 @@ async fn main() -> Result<(), E2EError> {
     // FmtSubscriber logs to stdout by default
     let args = CliArgs::parse();
 
-    tracing_subscriber::fmt().with_max_level(Level::from_str(&args.logging).unwrap()).init();
+    tracing_subscriber::fmt().with_max_level(Level::from_str(&args.logging)?).init();
 
     let cfg = load_e2e_config(&args.config_path)?;
     info!("Loaded E2E config: {:?}", cfg);
@@ -55,7 +58,7 @@ async fn main() -> Result<(), E2EError> {
     let mut current_offset = offset;
 
     while current_offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        sleep(std::time::Duration::from_secs(1)).await;
     }
 
     loop {
@@ -85,7 +88,7 @@ async fn main() -> Result<(), E2EError> {
 
 
 fn print_test_result(tasks: &mut HashMap<String, TestTask>) {
-    info!("Verified {} test-tasks",&tasks.len());
+    info!("Successfully verified {} test-tasks",&tasks.len());
     for ctx in tasks {
         let msg = &ctx.1.message;
         let gle = &ctx.1.greeting_logg_entry.as_ref().unwrap();
@@ -108,7 +111,7 @@ struct TestTask {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub(crate) struct CliArgs {
-    /// Path to configfile. If missing, a template file with default values is created.
+    /// Path to configfile. If missing, a template file with default values is created
     #[arg(
         short = 'c',
         long = "greeting-e2e-test-config",
@@ -130,6 +133,8 @@ pub(crate) struct CliArgs {
 enum E2EError {
     #[error("E2E config error: {0}")]
     ConfigError(#[from] ConfyError),
+    #[error("E2E config error: {0}")]
+    LoggParseError(#[from] ParseLevelError),
     #[error("Client error: {0}")]
     ClientError(#[from] reqwest::Error),
 }
