@@ -1,4 +1,4 @@
-use crate::api::load_e2e_config;
+use crate::api::{load_e2e_config, E2ETestConfig};
 use crate::greeting_api::{GreetingApiClient, GreetingLoggEntry};
 use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingReceiverClient};
 use clap::Parser;
@@ -7,7 +7,7 @@ use log::error;
 use std::collections::HashMap;
 use std::str::FromStr;
 use thiserror::Error;
-use time::{sleep, Duration};
+use time::{Duration};
 use tokio::time;
 use tokio::time::timeout;
 use tracing::metadata::ParseLevelError;
@@ -66,26 +66,30 @@ async fn main() -> Result<(), E2EError> {
         }
     }
 
-    let mut current_offset = offset;
-
     const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
-    wait_for_new_log_entry(&greeting_api_client, current_offset, GREETING_API_RESPONSE_TIMEOUT_SECS).await?;
+    wait_for_new_log_entry(&greeting_api_client, offset, GREETING_API_RESPONSE_TIMEOUT_SECS).await?;
 
+    verify_tasks( greeting_api_client,  &mut tasks, offset, cfg.greeting_log_limit).await?;
+
+    Ok(())
+}
+
+async fn verify_tasks(greeting_api_client: GreetingApiClient, mut tasks: &mut HashMap<String, TestTask>, mut current_offset: i64, greeting_log_limit: u16) -> Result<(), E2EError> {
     loop {
         let log_entries = greeting_api_client
-            .get_log_entries(current_offset + 1, cfg.greeting_log_limit)
+            .get_log_entries(current_offset + 1, greeting_log_limit)
             .await?;
 
         debug!(
             "Found {:?} entries from offset-id: {}",
             &log_entries.len(),
-            offset
+            current_offset
         );
         let temp_offset = log_entries
             .iter()
             .map(|l| l.id)
             .max()
-            .or_else(|| Some(offset))
+            .or_else(|| Some(current_offset))
             .unwrap();
 
         for log_entry in log_entries {
@@ -103,7 +107,6 @@ async fn main() -> Result<(), E2EError> {
 
         current_offset = temp_offset;
     }
-
     Ok(())
 }
 
