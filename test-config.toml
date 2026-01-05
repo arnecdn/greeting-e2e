@@ -1,5 +1,5 @@
 greeting_receiver_url = "http://localhost:8080"
 greeting_api_url = "http://localhost:8081"
 greeting_log_limit = 2
-num_iterations = 100
-num_clients = 0
+num_iterations = 1
+

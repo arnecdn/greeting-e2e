@@ -7,7 +7,7 @@ use log::error;
 use std::collections::HashMap;
 use std::str::FromStr;
 use thiserror::Error;
-use time::{Duration};
+use time::Duration;
 use tokio::time;
 use tokio::time::timeout;
 use tracing::metadata::ParseLevelError;
@@ -30,6 +30,17 @@ async fn main() -> Result<(), E2EError> {
     let cfg = load_e2e_config(&args.config_path)?;
     info!("Loaded E2E config: {:?}", cfg);
 
+    if cfg.num_iterations <= 0 {
+        error!("Invalid num_iterations: {}", cfg.num_iterations);
+        return Ok(())
+    }
+
+    execute_test(cfg).await?;
+
+    Ok(())
+}
+
+async fn execute_test(cfg: E2ETestConfig) -> Result<(), E2EError> {
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
     let offset = if let Some(last_log_entry) = greeting_api_client.get_last_log_entry().await? {
         last_log_entry.id
@@ -54,30 +65,38 @@ async fn main() -> Result<(), E2EError> {
         });
     info!("Generated {} test tasks", &tasks.len());
 
-    for t in &mut tasks {
-        debug!("Sending message: {:?}", &t.1.message.external_reference);
-        let resp = greeting_receiver_client.send(t.1.message.clone()).await;
+    for task in &mut tasks {
+        debug!("Sending message: {:?}", &task.1.message.external_reference);
+        let resp = greeting_receiver_client.send(task.1.message.clone()).await;
         match resp {
-            Ok(v) => t.1.message_id = Some(v.message_id),
+            Ok(v) => task.1.message_id = Some(v.message_id),
             Err(e) => error!(
                 "Error sending message.external_reference: {}, {}",
-                &t.1.external_reference, e
+                &task.1.external_reference, e
             ),
         }
     }
 
     const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
-    wait_for_new_log_entry(&greeting_api_client, offset, GREETING_API_RESPONSE_TIMEOUT_SECS).await?;
 
-    verify_tasks( greeting_api_client,  &mut tasks, offset, cfg.greeting_log_limit).await?;
+    timeout(
+        Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
+        async {
+            while offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
+                time::sleep(Duration::from_secs(1)).await;
+            }
+            Ok::<(), E2EError>(())
+        },
+    )
+    .await
+    .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
 
-    Ok(())
-}
+    // verify_tasks( greeting_api_client,  &mut tasks, offset, cfg.greeting_log_limit).await?;
+    let mut current_offset = offset;
 
-async fn verify_tasks(greeting_api_client: GreetingApiClient, mut tasks: &mut HashMap<String, TestTask>, mut current_offset: i64, greeting_log_limit: u16) -> Result<(), E2EError> {
     loop {
         let log_entries = greeting_api_client
-            .get_log_entries(current_offset + 1, greeting_log_limit)
+            .get_log_entries(current_offset + 1, cfg.greeting_log_limit)
             .await?;
 
         debug!(
@@ -107,18 +126,7 @@ async fn verify_tasks(greeting_api_client: GreetingApiClient, mut tasks: &mut Ha
 
         current_offset = temp_offset;
     }
-    Ok(())
-}
 
-async fn wait_for_new_log_entry(greeting_api_client: &GreetingApiClient, current_offset: i64, wait_timeout: u64) -> Result<(), E2EError> {
-    timeout(Duration::from_secs(wait_timeout), async {
-        while current_offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
-            time::sleep(Duration::from_secs(1)).await;
-        }
-        Ok::<(), E2EError>(())
-    })
-        .await
-        .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
     Ok(())
 }
 
