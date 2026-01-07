@@ -61,12 +61,11 @@ impl GreetingApiClient {
             .await?;
 
         let status = response.status();
-        if status == 204 || !status.is_success() {
-            return Ok(vec![]);
-        }
 
         if status == 200 {
             Ok(response.json::<Vec<GreetingLoggEntry>>().await?)
+        }else if status == 204 {
+            Ok(vec![])
         } else {
             let status = response.error_for_status_ref().unwrap_err();
             let error_message = response.text().await?;
