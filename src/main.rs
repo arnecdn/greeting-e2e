@@ -1,4 +1,4 @@
-use crate::api::{load_e2e_config, E2ETestConfig};
+use crate::api::load_e2e_config;
 use crate::greeting_api::{GreetingApiClient, GreetingLoggEntry};
 use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingReceiverClient};
 use clap::Parser;
@@ -32,15 +32,8 @@ async fn main() -> Result<(), E2EError> {
 
     if cfg.num_iterations <= 0 {
         error!("Invalid num_iterations: {}", cfg.num_iterations);
-        return Ok(())
+        return Ok(());
     }
-
-    execute_test(cfg).await?;
-
-    Ok(())
-}
-
-async fn execute_test(cfg: E2ETestConfig) -> Result<(), E2EError> {
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
     let offset = if let Some(last_log_entry) = greeting_api_client.get_last_log_entry().await? {
         last_log_entry.id
@@ -51,7 +44,7 @@ async fn execute_test(cfg: E2ETestConfig) -> Result<(), E2EError> {
     info!("Log-entry offset-id: {}", offset);
     let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url);
 
-    let mut tasks = (0..cfg.num_iterations)
+    let mut task_list = (0..cfg.num_iterations)
         .map(|_| generate_random_message())
         .map(|m| TestTask {
             external_reference: m.external_reference.to_string(),
@@ -59,87 +52,109 @@ async fn execute_test(cfg: E2ETestConfig) -> Result<(), E2EError> {
             message_id: None,
             greeting_logg_entry: None,
         })
-        .fold(HashMap::new(), |mut acc, t| {
-            acc.insert(t.external_reference.to_string(), t);
+        .fold(vec![], |mut acc, t| {
+            acc.push(t);
             acc
         });
-    info!("Generated {} test tasks", &tasks.len());
+    info!("Generated {} test tasks", &task_list.len());
+    let mut task_map = HashMap::new();
 
-    for task in &mut tasks {
-        debug!("Sending message: {:?}", &task.1.message.external_reference);
-        let resp = greeting_receiver_client.send(task.1.message.clone()).await;
+    for task in &mut task_list {
+        debug!("Sending message: {:?}", &task.message.external_reference);
+        let resp = greeting_receiver_client.send(task.message.clone()).await;
+
         match resp {
-            Ok(v) => task.1.message_id = Some(v.message_id),
+            Ok(v) => {
+                task.message_id = Some(v.message_id.to_string());
+                task_map.insert(v.message_id, task);
+            }
             Err(e) => error!(
-                "Error sending message.external_reference: {}, {}",
-                &task.1.external_reference, e
+                "Failed sending message.external_reference: {}, error: {:?}",
+                task.external_reference, e
             ),
         }
     }
 
-    const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
+    let verified_tasks = verify_tasks(&greeting_api_client, offset, cfg.greeting_log_limit, task_map).await;
 
-    timeout(
-        Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
-        async {
-            while offset == greeting_api_client.get_last_log_entry().await?.unwrap().id {
-                time::sleep(Duration::from_secs(1)).await;
-            }
-            Ok::<(), E2EError>(())
-        },
-    )
-    .await
-    .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
-
-    // verify_tasks( greeting_api_client,  &mut tasks, offset, cfg.greeting_log_limit).await?;
-    let mut current_offset = offset;
-
-    loop {
-        let log_entries = greeting_api_client
-            .get_log_entries(current_offset + 1, cfg.greeting_log_limit)
-            .await?;
-
-        debug!(
-            "Found {:?} entries from offset-id: {}",
-            &log_entries.len(),
-            current_offset
-        );
-        let temp_offset = log_entries
-            .iter()
-            .map(|l| l.id)
-            .max()
-            .or_else(|| Some(current_offset))
-            .unwrap();
-
-        for log_entry in log_entries {
-            if let Some(entry) = tasks.get_mut(&log_entry.external_reference) {
-                entry.greeting_logg_entry = Some(log_entry.clone());
-            }
-        }
-
-        if tasks.iter().all(|e| e.1.greeting_logg_entry.is_some())
-            && tasks.iter().all(|e| e.1.message_id.is_some())
-        {
-            print_test_result(&mut tasks);
-            break;
-        }
-
-        current_offset = temp_offset;
+    match verified_tasks {
+        Ok(v) => print_test_result(&v),
+        Err(e) => error!("{}",e)
     }
+
 
     Ok(())
 }
 
-fn print_test_result(tasks: &mut HashMap<String, TestTask>) {
+async fn verify_tasks<'a>(
+    greeting_api_client: &'a GreetingApiClient,
+    offset: i64,
+    logg_limit: u16,
+    mut tasks: HashMap<String, &'a mut TestTask>,
+) -> Result<HashMap<String, &'a mut TestTask>, E2EError> {
+    const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
+    let mut current_offset = offset;
+
+    let verified_tasks = timeout(
+        Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
+        async {
+            while tasks.iter().any(|e| e.1.greeting_logg_entry.is_none()) {
+                let log_entries_result = greeting_api_client
+                    .get_log_entries(current_offset + 1, logg_limit)
+                    .await.map_err(|e|E2EError::ClientError(e));
+
+
+                let log_entries = match log_entries_result {
+                    Ok(v) => v,
+                    Err(e) => {
+                        panic!("Error when verifying tasks: {}", e)
+                    }
+                };
+
+                if log_entries.is_empty() {
+                    time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+
+                debug!(
+                    "Found {:?} entries from offset-id: {}",
+                    &log_entries.len(),
+                    current_offset
+                );
+
+                for log_entry in log_entries {
+                    if let Some(entry) = tasks.get_mut(&log_entry.message_id) {
+                        entry.greeting_logg_entry = Some(log_entry.clone());
+                    }
+
+                    current_offset = log_entry.id;
+                }
+            }
+            Ok::<HashMap<String, &mut TestTask>, E2EError>(tasks)
+        },
+    )
+        .await
+        .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
+
+    Ok(verified_tasks)
+}
+
+fn print_test_result(tasks: &HashMap<String, &mut TestTask>) {
     info!("Successfully verified {} test-tasks", &tasks.len());
     for ctx in tasks {
         let msg = &ctx.1.message;
-        let gle = &ctx.1.greeting_logg_entry.as_ref().unwrap();
 
-        debug!(
-            "Verified logg-id: {:?}, greeting.created: {:?}, log.created: {:?}",
-            gle.id, msg.created, gle.created
-        );
+        if let Some(gle) = &ctx.1.greeting_logg_entry.as_ref() {
+            debug!(
+                "Verified task.external_reference: {}, greeting.created: {:?}, logg-id: {:?}, log.created: {:?}",
+                msg.external_reference, msg.created, gle.id, gle.created
+            );
+        } else {
+            debug!(
+                "Task not verified task.external_reference: {}, greeting.created: {:?}",
+                msg.external_reference, msg.created
+            );
+        }
     }
 }
 

@@ -32,7 +32,7 @@ impl GreetingReceiverClient {
 
         GreetingReceiverClient {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(1))
+                .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .expect("Failed to build client"),
 

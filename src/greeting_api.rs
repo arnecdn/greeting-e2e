@@ -15,7 +15,7 @@ pub struct LoggQuery {
 pub struct GreetingLoggEntry {
     pub(crate) id: i64,
     pub(crate) greeting_id: i64,
-    pub(crate) external_reference: String,
+    pub(crate) message_id: String,
     pub(crate) created: DateTime<Utc>,
 }
 
@@ -38,7 +38,7 @@ impl GreetingApiClient {
             _ => {
                 let status = response.error_for_status_ref().unwrap_err();
                 let error_message = response.text().await?;
-                error!("{}", error_message);
+                error!("GreetingApiClient.get_last_log_entry: {}", error_message);
                 Err(status)
             }
         }
@@ -60,12 +60,17 @@ impl GreetingApiClient {
             .send()
             .await?;
 
-        if response.status().is_success() {
+        let status = response.status();
+        if status == 204 || !status.is_success() {
+            return Ok(vec![]);
+        }
+
+        if status == 200 {
             Ok(response.json::<Vec<GreetingLoggEntry>>().await?)
         } else {
             let status = response.error_for_status_ref().unwrap_err();
             let error_message = response.text().await?;
-            error!("{}", error_message);
+            error!("GreetingApiClient.get_log_entries: {}", error_message);
             Err(status)
         }
     }
@@ -75,7 +80,7 @@ impl GreetingApiClient {
 
         GreetingApiClient {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(1))
+                .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .expect("Failed to build client"),
             url,
@@ -94,7 +99,7 @@ mod tests {
     #[tokio::test]
     async fn should_get_last_logg_entry() {
         let expected_log_entry = json!(
-            {"id": 2, "greetingId": 2, "externalReference": "1", "created": "2026-01-01T20:56:57.414558Z"}
+            {"id": 2, "greetingId": 2, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4", "created": "2026-01-01T20:56:57.414558Z"}
         );
 
         let mock_server = MockServer::start().await;
@@ -133,8 +138,8 @@ mod tests {
     #[tokio::test]
     async fn should_get_latest_log_entries() {
         let expected_log_entries = json!([
-            {"id": 1, "greetingId": 1, "externalReference": "1", "created": "2026-01-01T20:00:00.414558Z"},
-            {"id": 2, "greetingId": 2, "externalReference": "2", "created": "2026-01-01T21:00:00.414558Z"}
+            {"id": 1, "greetingId": 1, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4", "created": "2026-01-01T20:00:00.414558Z"},
+            {"id": 2, "greetingId": 2, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc5", "created": "2026-01-01T21:00:00.414558Z"}
         ]);
 
         let mock_server = MockServer::start().await;
