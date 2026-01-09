@@ -1,4 +1,4 @@
-use crate::api::load_e2e_config;
+use crate::api::{load_e2e_config};
 use crate::greeting_api::{GreetingApiClient, GreetingLoggEntry};
 use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingReceiverClient};
 use clap::Parser;
@@ -34,17 +34,58 @@ async fn main() -> Result<(), E2EError> {
         error!("Invalid num_iterations: {}", cfg.num_iterations);
         return Ok(());
     }
+
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
 
-    let offset = match greeting_api_client.get_last_log_entry().await?{
+    let offset = match greeting_api_client.get_last_log_entry().await? {
         Some(v) => v.id,
         None => 0,
     };
-
     info!("Log-entry offset-id: {}", offset);
+
+    let task_list = genrate_test_tasks(cfg.num_iterations);
+    info!("Generated {} test tasks", &task_list.len());
+
     let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url);
 
-    let mut task_list = (0..cfg.num_iterations)
+    let sent_test_tasks = send_messages(task_list, greeting_receiver_client).await;
+    info!("Sent {} test tasks", &sent_test_tasks.len());
+
+    let verified_tasks = verify_tasks(greeting_api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await;
+
+    match verified_tasks {
+        Ok(v) => print_test_result(&v),
+        Err(e) => error!("{}",e)
+    }
+
+
+    Ok(())
+}
+
+async fn send_messages(task_list: Vec<TestTask>, greeting_receiver_client: GreetingReceiverClient) -> HashMap<String, TestTask> {
+    let mut tasks = HashMap::new();
+
+    for task in task_list {
+        debug!("Sending message: {:?}", &task.message.external_reference);
+        let resp = greeting_receiver_client.send(task.message.clone()).await;
+
+        match resp {
+            Ok(v) => {
+                let mut performed_task = TestTask::from(task);
+                performed_task.message_id = Some(v.message_id.to_string());
+                tasks.insert(v.message_id, performed_task);
+            }
+            Err(e) => error!(
+                "Failed sending message.external_reference: {}, error: {:?}",
+                task.external_reference, e
+            ),
+        }
+    }
+    tasks
+}
+
+fn genrate_test_tasks(num_iterations: u16) -> Vec<TestTask> {
+    let task_list = (0..num_iterations)
         .map(|_| generate_random_message())
         .map(|m| TestTask {
             external_reference: m.external_reference.to_string(),
@@ -56,42 +97,16 @@ async fn main() -> Result<(), E2EError> {
             acc.push(t);
             acc
         });
-    info!("Generated {} test tasks", &task_list.len());
-    let mut task_map = HashMap::new();
 
-    for task in &mut task_list {
-        debug!("Sending message: {:?}", &task.message.external_reference);
-        let resp = greeting_receiver_client.send(task.message.clone()).await;
-
-        match resp {
-            Ok(v) => {
-                task.message_id = Some(v.message_id.to_string());
-                task_map.insert(v.message_id, task);
-            }
-            Err(e) => error!(
-                "Failed sending message.external_reference: {}, error: {:?}",
-                task.external_reference, e
-            ),
-        }
-    }
-
-    let verified_tasks = verify_tasks(&greeting_api_client, offset, cfg.greeting_log_limit, task_map).await;
-
-    match verified_tasks {
-        Ok(v) => print_test_result(&v),
-        Err(e) => error!("{}",e)
-    }
-
-
-    Ok(())
+    task_list
 }
 
-async fn verify_tasks<'a>(
-    greeting_api_client: &'a GreetingApiClient,
+async fn verify_tasks(
+    greeting_api_client: GreetingApiClient,
     offset: i64,
     logg_limit: u16,
-    mut tasks: HashMap<String, &'a mut TestTask>,
-) -> Result<HashMap<String, &'a mut TestTask>, E2EError> {
+    mut tasks: HashMap<String, TestTask>,
+) -> Result<HashMap<String, TestTask>, E2EError> {
     const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
     let mut current_offset = offset;
 
@@ -130,7 +145,7 @@ async fn verify_tasks<'a>(
                     current_offset = log_entry.id;
                 }
             }
-            Ok::<HashMap<String, &mut TestTask>, E2EError>(tasks)
+            Ok::<HashMap<String, TestTask>, E2EError>(tasks)
         },
     )
         .await
@@ -139,7 +154,7 @@ async fn verify_tasks<'a>(
     Ok(verified_tasks)
 }
 
-fn print_test_result(tasks: &HashMap<String, &mut TestTask>) {
+fn print_test_result(tasks: &HashMap<String, TestTask>) {
     info!("Successfully verified {} test-tasks", &tasks.len());
     for ctx in tasks {
         let msg = &ctx.1.message;
@@ -158,7 +173,7 @@ fn print_test_result(tasks: &HashMap<String, &mut TestTask>) {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TestTask {
     pub external_reference: String,
     pub message: GreetingCmd,

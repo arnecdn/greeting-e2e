@@ -178,3 +178,19 @@ mod tests {
         assert_eq!(json!(resp), expected_log_entries);
     }
 }
+// {
+//   "id": 1,
+//   "message": {
+//     "externalReference": "019b92d2-f012-7222-a099-0b73d5788b30",
+//     "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4",
+//     "to": "arne",
+//     "from": "arne",
+//     "heading": "chrismas carg",
+//     "message": "Happy christmas",
+//     "created": "2026-01-06T10:20:56.210182",
+//     "eventsCreated": {
+//       "received_greeting": "2026-01-06T09:54:47.560879858"
+//     }
+//   },
+//   "created": "2026-01-06T09:54:47.609662Z"
+// }
