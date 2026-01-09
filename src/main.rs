@@ -35,10 +35,10 @@ async fn main() -> Result<(), E2EError> {
         return Ok(());
     }
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
-    let offset = if let Some(last_log_entry) = greeting_api_client.get_last_log_entry().await? {
-        last_log_entry.id
-    } else {
-        0
+
+    let offset = match greeting_api_client.get_last_log_entry().await?{
+        Some(v) => v.id,
+        None => 0,
     };
 
     info!("Log-entry offset-id: {}", offset);

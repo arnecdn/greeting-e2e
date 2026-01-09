@@ -89,14 +89,13 @@ impl GreetingApiClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::greeting_api::{GreetingApiClient, GreetingLoggEntry};
-    use chrono::Utc;
+    use crate::greeting_api::{GreetingApiClient};
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
-    async fn should_get_last_logg_entry() {
+    async fn should_get_last_logg_entry_with_200_respon() {
         let expected_log_entry = json!(
             {"id": 2, "greetingId": 2, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4", "created": "2026-01-01T20:56:57.414558Z"}
         );
@@ -113,9 +112,28 @@ mod tests {
         let greeting_log_entry = greeting_api_client
             .get_last_log_entry()
             .await
-            .expect("Expeced logentry");
+            .expect("Expected log entry");
 
         assert_eq!(json!(greeting_log_entry.unwrap()), expected_log_entry);
+    }
+
+    #[tokio::test]
+    async fn should_get_last_logg_entry_with_204_response() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/log/last"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+
+        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri());
+        let greeting_log_entry = greeting_api_client
+            .get_last_log_entry()
+            .await
+            .expect("Expected None");
+
+        assert_eq!(greeting_log_entry, None);
     }
 
     #[tokio::test]
