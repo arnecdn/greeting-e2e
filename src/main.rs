@@ -1,4 +1,4 @@
-use crate::api::{load_e2e_config};
+use crate::api::{load_e2e_config, E2ETestConfig};
 use crate::greeting_api::{GreetingApiClient, GreetingLoggEntry};
 use crate::greeting_receiver::{generate_random_message, GreetingCmd, GreetingReceiverClient};
 use clap::Parser;
@@ -35,32 +35,53 @@ async fn main() -> Result<(), E2EError> {
         return Ok(());
     }
 
-    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
-
-    let offset = match greeting_api_client.get_last_log_entry().await? {
-        Some(v) => v.id,
-        None => 0,
-    };
-    info!("Log-entry offset-id: {}", offset);
-
-    let task_list = genrate_test_tasks(cfg.num_iterations);
-    info!("Generated {} test tasks", &task_list.len());
-
-    let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url);
-
-    let sent_test_tasks = send_messages(task_list, greeting_receiver_client).await;
-    info!("Sent {} test tasks", &sent_test_tasks.len());
-
-    let verified_tasks = verify_tasks(greeting_api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await;
+    let verified_tasks = execute_e2e_test(cfg).await?;
 
     match verified_tasks {
         Ok(v) => print_test_result(&v),
         Err(e) => error!("{}",e)
     }
 
-
     Ok(())
 }
+
+async fn execute_e2e_test(cfg: E2ETestConfig) -> Result<Result<HashMap<String, TestTask>, E2EError>, E2EError> {
+    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
+    let offset = match greeting_api_client.get_last_log_entry().await? {
+        Some(v) => v.id,
+        None => 0,
+    };
+    info!("Log-entry offset-id: {}", offset);
+
+    let task_list = generate_test_tasks(cfg.num_iterations);
+    info!("Generated {} test tasks", &task_list.len());
+
+    let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url);
+    let sent_test_tasks = send_messages(task_list, greeting_receiver_client).await;
+    info!("Sent {} test tasks", &sent_test_tasks.len());
+
+    let verified_tasks = verify_tasks(greeting_api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await;
+    Ok(verified_tasks)
+}
+
+
+fn generate_test_tasks(num_iterations: u16) -> Vec<TestTask> {
+    let task_list = (0..num_iterations)
+        .map(|_| generate_random_message())
+        .map(|m| TestTask {
+            external_reference: m.external_reference.to_string(),
+            message: m,
+            message_id: None,
+            greeting_logg_entry: None,
+        })
+        .fold(vec![], |mut acc, t| {
+            acc.push(t);
+            acc
+        });
+
+    task_list
+}
+
 
 async fn send_messages(task_list: Vec<TestTask>, greeting_receiver_client: GreetingReceiverClient) -> HashMap<String, TestTask> {
     let mut tasks = HashMap::new();
@@ -82,23 +103,6 @@ async fn send_messages(task_list: Vec<TestTask>, greeting_receiver_client: Greet
         }
     }
     tasks
-}
-
-fn genrate_test_tasks(num_iterations: u16) -> Vec<TestTask> {
-    let task_list = (0..num_iterations)
-        .map(|_| generate_random_message())
-        .map(|m| TestTask {
-            external_reference: m.external_reference.to_string(),
-            message: m,
-            message_id: None,
-            greeting_logg_entry: None,
-        })
-        .fold(vec![], |mut acc, t| {
-            acc.push(t);
-            acc
-        });
-
-    task_list
 }
 
 async fn verify_tasks(
