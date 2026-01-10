@@ -1,7 +1,7 @@
 use log::error;
 use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use reqwest::{Client, Error, Url};
-pub(crate) use crate::{GreetingCmd, GreetingResponse};
+use crate::greeting_e2e::{GreetingCmd, GreetingResponse};
 
 pub struct GreetingReceiverClient {
     client: Client,

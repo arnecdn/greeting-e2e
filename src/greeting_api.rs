@@ -1,6 +1,6 @@
 use log::error;
 use reqwest::{Client, Url};
-use crate::GreetingLoggEntry;
+use crate::greeting_e2e::GreetingLoggEntry;
 
 pub struct GreetingApiClient {
     client: Client,
