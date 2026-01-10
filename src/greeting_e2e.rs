@@ -1,8 +1,8 @@
 use crate::api::E2ETestConfig;
-use crate::greeting_receiver::GreetingReceiverClient;
 use chrono::{DateTime, Utc};
 use confy::ConfyError;
 use log::error;
+use reqwest::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -13,15 +13,16 @@ use tracing::metadata::ParseLevelError;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-pub async fn execute_e2e_test<E, F>(
+pub async fn execute_e2e_test<E, F, G>(
     cfg: E2ETestConfig,
     api_client: E,
-    receiver_client: GreetingReceiverClient,
-    message_generator: F,
+    receiver_client: F,
+    message_generator: G,
 ) -> Result<HashMap<String, TestTask>, E2EError>
 where
-    F: Fn() -> GreetingCmd,
     E: GreetingApi,
+    F: GreetingReceiver,
+    G: Fn() -> GreetingCmd,
 {
     let offset = match api_client.get_last_log_entry().await? {
         Some(v) => v.id,
@@ -38,9 +39,9 @@ where
     verify_tasks(api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
 }
 
-fn generate_test_tasks<F>(num_iterations: u16, message_generator: F) -> Vec<TestTask>
+fn generate_test_tasks<G>(num_iterations: u16, message_generator: G) -> Vec<TestTask>
 where
-    F: Fn() -> GreetingCmd,
+    G: Fn() -> GreetingCmd,
 {
     (0..num_iterations)
         .map(|_| message_generator())
@@ -66,10 +67,13 @@ pub fn generate_random_message() -> GreetingCmd {
         created: Utc::now(),
     }
 }
-async fn send_messages(
+async fn send_messages<F>(
     task_list: Vec<TestTask>,
-    greeting_receiver_client: GreetingReceiverClient,
-) -> HashMap<String, TestTask> {
+    greeting_receiver_client: F,
+) -> HashMap<String, TestTask>
+where
+    F: GreetingReceiver,
+{
     let mut tasks = HashMap::new();
 
     for task in task_list {
@@ -181,6 +185,11 @@ pub struct GreetingLoggEntry {
     pub(crate) created: DateTime<Utc>,
 }
 
+pub trait GreetingReceiver {
+    fn new_client(url: String) -> Self;
+    async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error>;
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct GreetingCmd {
@@ -208,4 +217,3 @@ pub enum E2EError {
     #[error("Timeout error: {0}")]
     TimeoutError(String),
 }
-

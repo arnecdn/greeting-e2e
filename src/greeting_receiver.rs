@@ -1,15 +1,16 @@
 use log::error;
 use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use reqwest::{Client, Error, Url};
-use crate::greeting_e2e::{GreetingCmd, GreetingResponse};
+use crate::greeting_e2e::{GreetingCmd, GreetingReceiver, GreetingResponse};
+
 
 pub struct GreetingReceiverClient {
     client: Client,
     url: String,
 }
 
-impl GreetingReceiverClient {
-    pub fn new_client(url: String) -> Self {
+impl GreetingReceiver for GreetingReceiverClient {
+    fn new_client(url: String) -> Self {
         Url::parse(&url).expect("Invalid url");
 
         GreetingReceiverClient {
@@ -21,8 +22,7 @@ impl GreetingReceiverClient {
             url,
         }
     }
-
-    pub async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error> {
+    async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
@@ -51,6 +51,7 @@ mod tests {
     use crate::greeting_receiver::{GreetingCmd, GreetingReceiverClient, GreetingResponse};
     use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+    use crate::greeting_e2e::GreetingReceiver;
 
     #[tokio::test]
     async fn should_send_greeting_message_successfully() {

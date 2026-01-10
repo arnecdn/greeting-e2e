@@ -1,13 +1,13 @@
 use crate::api::{load_e2e_config};
 use crate::greeting_api::{GreetingApiClient};
-use crate::greeting_receiver::GreetingReceiverClient;
+use crate::greeting_receiver::{GreetingReceiverClient};
 use clap::Parser;
 use log::error;
 use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::Level;
 use tracing::{debug, info};
-use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, GreetingApi, TestTask};
+use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, GreetingApi, GreetingReceiver, TestTask};
 
 mod api;
 mod greeting_api;
@@ -97,9 +97,7 @@ fn print_test_result(tasks: &HashMap<String, TestTask>) {
 mod tests {
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
-    use crate::greeting_e2e::{
-        execute_e2e_test, generate_random_message, GreetingApi, GreetingCmd, GreetingResponse,
-    };
+    use crate::greeting_e2e::{execute_e2e_test, generate_random_message, GreetingApi, GreetingCmd, GreetingReceiver, GreetingResponse};
     use crate::greeting_receiver::GreetingReceiverClient;
     use serde_json::json;
     use wiremock::matchers::{body_json, method, path, query_param};
