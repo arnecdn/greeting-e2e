@@ -1,23 +1,6 @@
-use chrono::{DateTime, Utc};
 use log::error;
 use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct LoggQuery {
-    direction: String,
-    offset: i64,
-    limit: i8,
-}
-#[derive(Serialize, Deserialize, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct GreetingLoggEntry {
-    pub(crate) id: i64,
-    pub(crate) greeting_id: i64,
-    pub(crate) message_id: String,
-    pub(crate) created: DateTime<Utc>,
-}
+use crate::GreetingLoggEntry;
 
 pub struct GreetingApiClient {
     client: Client,

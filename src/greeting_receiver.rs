@@ -1,25 +1,7 @@
-use chrono::{DateTime, Utc};
 use log::error;
 use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use reqwest::{Client, Error, Url};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct GreetingCmd {
-    pub(crate) external_reference: String,
-    to: String,
-    from: String,
-    heading: String,
-    message: String,
-    pub (crate) created: DateTime<Utc>,
-}
-#[derive(Serialize, Deserialize, Debug, PartialOrd, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct GreetingResponse {
-    pub message_id: String,
-}
+pub(crate) use crate::{GreetingCmd, GreetingResponse};
 
 pub struct GreetingReceiverClient {
     client: Client,
@@ -63,16 +45,6 @@ impl GreetingReceiverClient {
     }
 }
 
-pub fn generate_random_message() -> GreetingCmd {
-    GreetingCmd {
-        to: "arne".to_string(),
-        from: "arne".to_string(),
-        heading: "chrismas carg".to_string(),
-        message: "Happy christmas".to_string(),
-        external_reference: Uuid::now_v7().to_string(),
-        created: Utc::now(),
-    }
-}
 
 #[cfg(test)]
 mod tests {
