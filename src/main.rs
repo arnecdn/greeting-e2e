@@ -61,7 +61,7 @@ async fn execute_e2e_test<F>(
     cfg: E2ETestConfig,
     api_client: GreetingApiClient,
     receiver_client: GreetingReceiverClient,
-    random_msg_generator: F,
+    messsage_generator: F,
 ) -> Result<HashMap<String, TestTask>, E2EError>
 where
     F: Fn() -> GreetingCmd,
@@ -72,7 +72,7 @@ where
     };
     info!("Log-entry offset-id: {}", offset);
 
-    let task_list = generate_test_tasks(cfg.num_iterations, random_msg_generator);
+    let task_list = generate_test_tasks(cfg.num_iterations, messsage_generator);
     info!("Generated {} test tasks", &task_list.len());
 
     let sent_test_tasks = send_messages(task_list, receiver_client).await;
@@ -81,12 +81,12 @@ where
     verify_tasks(api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
 }
 
-fn generate_test_tasks<F>(num_iterations: u16, random_msg_generator: F) -> Vec<TestTask>
+fn generate_test_tasks<F>(num_iterations: u16, messsage_generator: F) -> Vec<TestTask>
 where
     F: Fn() -> GreetingCmd,
 {
-    let task_list = (0..num_iterations)
-        .map(|_| random_msg_generator())
+    (0..num_iterations)
+        .map(|_| messsage_generator())
         .map(|m| TestTask {
             external_reference: m.external_reference.to_string(),
             message: m,
@@ -96,9 +96,7 @@ where
         .fold(vec![], |mut acc, t| {
             acc.push(t);
             acc
-        });
-
-    task_list
+        })
 }
 
 fn generate_random_message() -> GreetingCmd {
@@ -328,8 +326,26 @@ mod tests {
 
     #[tokio::test]
     async fn should_execute_e2e_for_1_task_successfully() {
-        let greeting_receiver_server = MockServer::start().await;
         let greeting_api_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/log/last"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&greeting_api_server)
+            .await;
+
+        let expected_log_entries = json!([
+            {"id": 1, "greetingId": 1, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4", "created": "2026-01-01T20:00:00.414558Z"},
+        ]);
+
+        Mock::given(method("GET"))
+            .and(path("/log"))
+            .and(query_param("direction", "forward"))
+            .and(query_param("offset", "1"))
+            .and(query_param("limit", "10"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_log_entries))
+            .mount(&greeting_api_server)
+            .await;
 
         let msg = json!({
             "created": "2026-01-10T09:35:27.262Z",
@@ -340,24 +356,6 @@ mod tests {
             "to": "string"
         });
 
-        let expected_log_entries = json!([
-            {"id": 1, "greetingId": 1, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4", "created": "2026-01-01T20:00:00.414558Z"},
-        ]);
-
-        Mock::given(method("GET"))
-            .and(path("/log/last"))
-            .respond_with(ResponseTemplate::new(204))
-            .mount(&greeting_api_server)
-            .await;
-
-        Mock::given(method("GET"))
-            .and(path("/log"))
-            .and(query_param("direction", "forward"))
-            .and(query_param("offset", "1"))
-            .and(query_param("limit", "10"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_log_entries))
-            .mount(&greeting_api_server)
-            .await;
         let test_greeting_generator =
             || serde_json::from_value::<GreetingCmd>(msg.clone()).expect("Could not parse json");
 
@@ -366,6 +364,7 @@ mod tests {
         let expected_response = GreetingResponse {
             message_id: "019b92bb-0088-77f1-8b09-5d56dfa72bc4".to_string(),
         };
+        let greeting_receiver_server = MockServer::start().await;
 
         Mock::given(method("POST"))
             .and(path("/greeting"))
