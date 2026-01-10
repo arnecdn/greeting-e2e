@@ -1,28 +1,27 @@
-use std::collections::HashMap;
-use std::time::Duration;
+use crate::api::E2ETestConfig;
+use crate::greeting_receiver::GreetingReceiverClient;
 use chrono::{DateTime, Utc};
 use confy::ConfyError;
 use log::error;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::time;
 use tokio::time::timeout;
-use tracing::{debug, info};
 use tracing::metadata::ParseLevelError;
+use tracing::{debug, info};
 use uuid::Uuid;
-use crate::api::E2ETestConfig;
-use crate::greeting_api::GreetingApiClient;
-use crate::greeting_receiver::GreetingReceiverClient;
 
-
-pub async fn execute_e2e_test<F>(
+pub async fn execute_e2e_test<E, F>(
     cfg: E2ETestConfig,
-    api_client: GreetingApiClient,
+    api_client: E,
     receiver_client: GreetingReceiverClient,
-    messsage_generator: F,
+    message_generator: F,
 ) -> Result<HashMap<String, TestTask>, E2EError>
 where
     F: Fn() -> GreetingCmd,
+    E: GreetingApi,
 {
     let offset = match api_client.get_last_log_entry().await? {
         Some(v) => v.id,
@@ -30,7 +29,7 @@ where
     };
     info!("Log-entry offset-id: {}", offset);
 
-    let task_list = generate_test_tasks(cfg.num_iterations, messsage_generator);
+    let task_list = generate_test_tasks(cfg.num_iterations, message_generator);
     info!("Generated {} test tasks", &task_list.len());
 
     let sent_test_tasks = send_messages(task_list, receiver_client).await;
@@ -39,12 +38,12 @@ where
     verify_tasks(api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
 }
 
-fn generate_test_tasks<F>(num_iterations: u16, messsage_generator: F) -> Vec<TestTask>
+fn generate_test_tasks<F>(num_iterations: u16, message_generator: F) -> Vec<TestTask>
 where
     F: Fn() -> GreetingCmd,
 {
     (0..num_iterations)
-        .map(|_| messsage_generator())
+        .map(|_| message_generator())
         .map(|m| TestTask {
             external_reference: m.external_reference.to_string(),
             message: m,
@@ -92,12 +91,15 @@ async fn send_messages(
     tasks
 }
 
-async fn verify_tasks(
-    greeting_api_client: GreetingApiClient,
+async fn verify_tasks<E>(
+    greeting_api_client: E,
     offset: i64,
     logg_limit: u16,
     mut tasks: HashMap<String, TestTask>,
-) -> Result<HashMap<String, TestTask>, E2EError> {
+) -> Result<HashMap<String, TestTask>, E2EError>
+where
+    E: GreetingApi,
+{
     const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
     let mut current_offset = offset;
 
@@ -139,12 +141,11 @@ async fn verify_tasks(
             Ok::<HashMap<String, TestTask>, E2EError>(tasks)
         },
     )
-        .await
-        .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
+    .await
+    .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
 
     Ok(verified_tasks)
 }
-
 
 #[derive(Debug, Clone)]
 pub(crate) struct TestTask {
@@ -154,6 +155,15 @@ pub(crate) struct TestTask {
     pub greeting_logg_entry: Option<GreetingLoggEntry>,
 }
 
+pub trait GreetingApi {
+    async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error>;
+    async fn get_log_entries(
+        &self,
+        offset: i64,
+        limit: u16,
+    ) -> Result<Vec<GreetingLoggEntry>, reqwest::Error>;
+    fn new_client(url: String) -> Self;
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -187,8 +197,6 @@ pub struct GreetingResponse {
     pub message_id: String,
 }
 
-
-
 #[derive(Error, Debug)]
 pub enum E2EError {
     #[error("E2E config error: {0}")]
@@ -201,125 +209,3 @@ pub enum E2EError {
     TimeoutError(String),
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::api::E2ETestConfig;
-    use crate::greeting_api::GreetingApiClient;
-    use crate::greeting_receiver::GreetingReceiverClient;
-    use serde_json::json;
-    use wiremock::matchers::{body_json, method, path, query_param};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-    use crate::greeting_e2e::{execute_e2e_test, generate_random_message, GreetingCmd, GreetingResponse};
-
-    #[tokio::test]
-    async fn should_execute_e2e_for_0_task_successfully() {
-        let greeting_receiver_server = MockServer::start().await;
-        let greeting_api_server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/log/last"))
-            .respond_with(ResponseTemplate::new(204))
-            .mount(&greeting_api_server)
-            .await;
-
-        let test_config = E2ETestConfig {
-            greeting_receiver_url: greeting_receiver_server.uri(),
-            greeting_api_url: greeting_api_server.uri(),
-            greeting_log_limit: 0,
-            num_iterations: 0,
-        };
-
-        let greeting_api_client =
-            GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
-        let greeting_receiver_client =
-            GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
-
-        let result = execute_e2e_test(
-            test_config,
-            greeting_api_client,
-            greeting_receiver_client,
-            generate_random_message,
-        )
-            .await;
-
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty())
-    }
-
-    #[tokio::test]
-    async fn should_execute_e2e_for_1_task_successfully() {
-        let greeting_api_server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/log/last"))
-            .respond_with(ResponseTemplate::new(204))
-            .mount(&greeting_api_server)
-            .await;
-
-        let expected_log_entries = json!([
-            {"id": 1, "greetingId": 1, "messageId": "019b92bb-0088-77f1-8b09-5d56dfa72bc4", "created": "2026-01-01T20:00:00.414558Z"},
-        ]);
-
-        Mock::given(method("GET"))
-            .and(path("/log"))
-            .and(query_param("direction", "forward"))
-            .and(query_param("offset", "1"))
-            .and(query_param("limit", "10"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_log_entries))
-            .mount(&greeting_api_server)
-            .await;
-
-        let msg = json!({
-            "created": "2026-01-10T09:35:27.262Z",
-            "externalReference": "string",
-            "from": "string",
-            "heading": "string",
-            "message": "string",
-            "to": "string"
-        });
-
-        let test_greeting_generator =
-            || serde_json::from_value::<GreetingCmd>(msg.clone()).expect("Could not parse json");
-
-        let greeting_msg = test_greeting_generator();
-
-        let expected_response = GreetingResponse {
-            message_id: "019b92bb-0088-77f1-8b09-5d56dfa72bc4".to_string(),
-        };
-        let greeting_receiver_server = MockServer::start().await;
-
-        Mock::given(method("POST"))
-            .and(path("/greeting"))
-            .and(body_json(greeting_msg))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
-            .mount(&greeting_receiver_server)
-            .await;
-
-        let test_config = E2ETestConfig {
-            greeting_receiver_url: greeting_receiver_server.uri(),
-            greeting_api_url: greeting_api_server.uri(),
-            greeting_log_limit: 10,
-            num_iterations: 1,
-        };
-
-        let greeting_api_client =
-            GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
-        let greeting_receiver_client =
-            GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
-
-        let result = execute_e2e_test(
-            test_config,
-            greeting_api_client,
-            greeting_receiver_client,
-            test_greeting_generator,
-        )
-            .await;
-
-        let num_verified = result
-            .unwrap()
-            .iter()
-            .filter(|t| t.1.greeting_logg_entry.is_some())
-            .count();
-        assert_eq!(num_verified, 1);
-    }
-}

@@ -1,14 +1,14 @@
 use log::error;
 use reqwest::{Client, Url};
-use crate::greeting_e2e::GreetingLoggEntry;
+use crate::greeting_e2e::{GreetingApi, GreetingLoggEntry};
 
 pub struct GreetingApiClient {
     client: Client,
     url: String,
 }
 
-impl GreetingApiClient {
-    pub async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error> {
+impl GreetingApi for GreetingApiClient {
+    async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error> {
         let response = self
             .client
             .get(format!("{}/log/last", &self.url))
@@ -26,8 +26,7 @@ impl GreetingApiClient {
             }
         }
     }
-
-    pub async fn get_log_entries(
+    async fn get_log_entries(
         &self,
         offset: i64,
         limit: u16,
@@ -47,7 +46,7 @@ impl GreetingApiClient {
 
         if status == 200 {
             Ok(response.json::<Vec<GreetingLoggEntry>>().await?)
-        }else if status == 204 {
+        } else if status == 204 {
             Ok(vec![])
         } else {
             let status = response.error_for_status_ref().unwrap_err();
@@ -56,8 +55,7 @@ impl GreetingApiClient {
             Err(status)
         }
     }
-
-    pub fn new_client(url: String) -> Self {
+    fn new_client(url: String) -> Self {
         Url::parse(&url).expect("Invalid url");
 
         GreetingApiClient {
@@ -70,12 +68,14 @@ impl GreetingApiClient {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use crate::greeting_api::{GreetingApiClient};
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+    use crate::greeting_e2e::GreetingApi;
 
     #[tokio::test]
     async fn should_get_last_logg_entry_with_200_respon() {
