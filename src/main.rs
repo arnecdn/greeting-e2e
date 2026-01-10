@@ -1,18 +1,18 @@
-use crate::api::{load_e2e_config};
-use crate::greeting_api::{GreetingApiClient};
-use crate::greeting_receiver::{GreetingReceiverClient};
+use crate::api::load_e2e_config;
+use crate::greeting_api::GreetingApiClient;
+use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, TestTask};
+use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
 use log::error;
 use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::Level;
 use tracing::{debug, info};
-use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, GreetingApi, GreetingReceiver, TestTask};
 
 mod api;
 mod greeting_api;
-mod greeting_receiver;
 mod greeting_e2e;
+mod greeting_receiver;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError> {
@@ -72,7 +72,6 @@ pub(crate) struct CliArgs {
     pub logging: String,
 }
 
-
 fn print_test_result(tasks: &HashMap<String, TestTask>) {
     info!("Successfully verified {} test-tasks", &tasks.len());
     for ctx in tasks {
@@ -92,12 +91,14 @@ fn print_test_result(tasks: &HashMap<String, TestTask>) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
-    use crate::greeting_e2e::{execute_e2e_test, generate_random_message, GreetingApi, GreetingCmd, GreetingReceiver, GreetingResponse};
+    use crate::greeting_e2e::{
+        execute_e2e_test, generate_random_message, GreetingCmd,
+        GreetingResponse,
+    };
     use crate::greeting_receiver::GreetingReceiverClient;
     use serde_json::json;
     use wiremock::matchers::{body_json, method, path, query_param};
@@ -132,7 +133,7 @@ mod tests {
             greeting_receiver_client,
             generate_random_message,
         )
-            .await;
+        .await;
 
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty())
@@ -205,7 +206,7 @@ mod tests {
             greeting_receiver_client,
             test_greeting_generator,
         )
-            .await;
+        .await;
 
         let num_verified = result
             .unwrap()

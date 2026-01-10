@@ -1,12 +1,24 @@
+use crate::greeting_e2e::{GreetingApi, GreetingLoggEntry};
 use log::error;
 use reqwest::{Client, Url};
-use crate::greeting_e2e::{GreetingApi, GreetingLoggEntry};
 
 pub struct GreetingApiClient {
     client: Client,
     url: String,
 }
+impl GreetingApiClient {
+    pub(crate) fn new_client(url: String) -> Self {
+        Url::parse(&url).expect("Invalid url");
 
+        GreetingApiClient {
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("Failed to build client"),
+            url,
+        }
+    }
+}
 impl GreetingApi for GreetingApiClient {
     async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error> {
         let response = self
@@ -55,27 +67,15 @@ impl GreetingApi for GreetingApiClient {
             Err(status)
         }
     }
-    fn new_client(url: String) -> Self {
-        Url::parse(&url).expect("Invalid url");
-
-        GreetingApiClient {
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to build client"),
-            url,
-        }
-    }
 }
-
 
 #[cfg(test)]
 mod tests {
-    use crate::greeting_api::{GreetingApiClient};
+    use crate::greeting_api::GreetingApiClient;
+    use crate::greeting_e2e::GreetingApi;
     use serde_json::json;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    use crate::greeting_e2e::GreetingApi;
 
     #[tokio::test]
     async fn should_get_last_logg_entry_with_200_respon() {

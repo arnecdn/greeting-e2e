@@ -166,7 +166,6 @@ pub trait GreetingApi {
         offset: i64,
         limit: u16,
     ) -> Result<Vec<GreetingLoggEntry>, reqwest::Error>;
-    fn new_client(url: String) -> Self;
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -186,7 +185,6 @@ pub struct GreetingLoggEntry {
 }
 
 pub trait GreetingReceiver {
-    fn new_client(url: String) -> Self;
     async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error>;
 }
 

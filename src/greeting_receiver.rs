@@ -1,16 +1,15 @@
+use crate::greeting_e2e::{GreetingCmd, GreetingReceiver, GreetingResponse};
 use log::error;
 use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use reqwest::{Client, Error, Url};
-use crate::greeting_e2e::{GreetingCmd, GreetingReceiver, GreetingResponse};
-
 
 pub struct GreetingReceiverClient {
     client: Client,
     url: String,
 }
 
-impl GreetingReceiver for GreetingReceiverClient {
-    fn new_client(url: String) -> Self {
+impl GreetingReceiverClient {
+    pub(crate) fn new_client(url: String) -> Self {
         Url::parse(&url).expect("Invalid url");
 
         GreetingReceiverClient {
@@ -22,6 +21,8 @@ impl GreetingReceiver for GreetingReceiverClient {
             url,
         }
     }
+}
+impl GreetingReceiver for GreetingReceiverClient {
     async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -45,17 +46,15 @@ impl GreetingReceiver for GreetingReceiverClient {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use crate::greeting_e2e::GreetingReceiver;
     use crate::greeting_receiver::{GreetingCmd, GreetingReceiverClient, GreetingResponse};
     use wiremock::matchers::{body_json, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    use crate::greeting_e2e::GreetingReceiver;
 
     #[tokio::test]
     async fn should_send_greeting_message_successfully() {
-
         let greeting_msg: GreetingCmd = serde_json::from_str(
             r#"{
             "created": "2026-01-02T11:44:14.877Z",
@@ -64,7 +63,8 @@ mod tests {
             "heading": "new year",
             "message": "happy new year",
             "to": "bjarne"
-        }"#)
+        }"#,
+        )
         .unwrap();
 
         let mock_server = MockServer::start().await;
