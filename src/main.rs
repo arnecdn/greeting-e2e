@@ -34,8 +34,10 @@ async fn main() -> Result<(), E2EError> {
         error!("Invalid num_iterations: {}", cfg.num_iterations);
         return Ok(());
     }
+    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
+    let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
 
-    let verified_tasks = execute_e2e_test(cfg).await?;
+    let verified_tasks = execute_e2e_test(cfg, greeting_api_client, greeting_receiver_client).await;
 
     match verified_tasks {
         Ok(v) => print_test_result(&v),
@@ -45,9 +47,9 @@ async fn main() -> Result<(), E2EError> {
     Ok(())
 }
 
-async fn execute_e2e_test(cfg: E2ETestConfig) -> Result<Result<HashMap<String, TestTask>, E2EError>, E2EError> {
-    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url);
-    let offset = match greeting_api_client.get_last_log_entry().await? {
+async fn execute_e2e_test(cfg: E2ETestConfig, api_client: GreetingApiClient, receiver_client: GreetingReceiverClient) -> Result<HashMap<String, TestTask>, E2EError> {
+
+    let offset = match api_client.get_last_log_entry().await? {
         Some(v) => v.id,
         None => 0,
     };
@@ -56,12 +58,11 @@ async fn execute_e2e_test(cfg: E2ETestConfig) -> Result<Result<HashMap<String, T
     let task_list = generate_test_tasks(cfg.num_iterations);
     info!("Generated {} test tasks", &task_list.len());
 
-    let greeting_receiver_client = GreetingReceiverClient::new_client(cfg.greeting_receiver_url);
-    let sent_test_tasks = send_messages(task_list, greeting_receiver_client).await;
+
+    let sent_test_tasks = send_messages(task_list, receiver_client).await;
     info!("Sent {} test tasks", &sent_test_tasks.len());
 
-    let verified_tasks = verify_tasks(greeting_api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await;
-    Ok(verified_tasks)
+    verify_tasks(api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
 }
 
 
@@ -216,4 +217,42 @@ enum E2EError {
     ClientError(#[from] reqwest::Error),
     #[error("Timeout error: {0}")]
     TimeoutError(String),
+}
+
+
+#[cfg(test)]
+mod tests {
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+    use crate::api::E2ETestConfig;
+    use crate::execute_e2e_test;
+    use crate::greeting_api::GreetingApiClient;
+    use crate::greeting_receiver::GreetingReceiverClient;
+
+    #[tokio::test]
+    async fn should_execute_e2e_for_0_task_successfully() {
+
+        let greeting_receiver_server = MockServer::start().await;
+        let greeting_api_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/log/last"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&greeting_api_server)
+            .await;
+
+        let test_config = E2ETestConfig{
+            greeting_receiver_url: greeting_receiver_server.uri(),
+            greeting_api_url: greeting_api_server.uri(),
+            greeting_log_limit: 0,
+            num_iterations: 0,
+        };
+
+        let greeting_api_client = GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
+        let greeting_receiver_client = GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
+
+        let result = execute_e2e_test(test_config, greeting_api_client, greeting_receiver_client).await;
+
+        assert!(result.is_ok());
+    }
 }
