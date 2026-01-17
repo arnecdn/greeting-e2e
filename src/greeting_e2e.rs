@@ -83,15 +83,17 @@ where
             acc.push(t);
             pb.inc(1);
             pb.set_message(format!(
-                "{} generated in {:?}",
+                "{}/{} generated in {:?}",
                 pb.position(),
+                num_iterations,
                 start_time.elapsed()
             ));
             acc
         });
     pb.abandon_with_message(format!(
-        "{} generated in {:?}",
+        "{}/{} generated in {:?}",
         pb.position(),
+        num_iterations,
         start_time.elapsed()
     ));
     generated_tasks
@@ -138,8 +140,9 @@ where
                 tasks.insert(v.message_id, performed_task);
                 pb_sent.inc(1);
                 pb_sent.set_message(format!(
-                    "{} sent in {:?}",
+                    "{}/{} sent in {:?}",
                     pb_sent.position(),
+                    number_of_test_tasks,
                     start_time.elapsed()
                 ));
             }
@@ -148,8 +151,9 @@ where
     }
 
     pb_sent.abandon_with_message(format!(
-        "{} sent in {:?}",
+        "{}/{} sent in {:?}",
         pb_sent.position(),
+        number_of_test_tasks,
         start_time.elapsed()
     ));
 
@@ -180,8 +184,9 @@ where
     );
     let start_time = std::time::Instant::now();
     pb.set_message(format!(
-        "{} verified in {:?}",
+        "{}/{} verified in {:?}",
         pb.position(),
+        number_of_test_tasks,
         start_time.elapsed()
     ));
     let verified_tasks = timeout(
@@ -209,8 +214,9 @@ where
                         pb.inc(1);
 
                         pb.set_message(format!(
-                            "{} verified in {:?}",
+                            "{}/{} verified in {:?}",
                             pb.position(),
+                            number_of_test_tasks,
                             start_time.elapsed()
                         ));
                     }
@@ -219,8 +225,9 @@ where
                 }
             }
             pb.abandon_with_message(format!(
-                "{} verified in {:?}",
+                "{}/{} verified in {:?}",
                 pb.position(),
+                number_of_test_tasks,
                 start_time.elapsed()
             ));
             ();
