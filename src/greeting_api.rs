@@ -1,5 +1,4 @@
-use crate::greeting_e2e::{GreetingApi, GreetingLoggEntry};
-use log::error;
+use crate::greeting_e2e::{E2EError, GreetingApi, GreetingLoggEntry};
 use reqwest::{Client, Url};
 
 pub struct GreetingApiClient {
@@ -20,7 +19,7 @@ impl GreetingApiClient {
     }
 }
 impl GreetingApi for GreetingApiClient {
-    async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error> {
+    async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, E2EError> {
         let response = self
             .client
             .get(format!("{}/log/last", &self.url))
@@ -33,8 +32,7 @@ impl GreetingApi for GreetingApiClient {
             _ => {
                 let status = response.error_for_status_ref().unwrap_err();
                 let error_message = response.text().await?;
-                error!("GreetingApiClient.get_last_log_entry: {}", error_message);
-                Err(status)
+                Err(E2EError::ClientError(format!("Status: {}, message:{}", status, error_message)))
             }
         }
     }
@@ -42,7 +40,7 @@ impl GreetingApi for GreetingApiClient {
         &self,
         offset: i64,
         limit: u16,
-    ) -> Result<Vec<GreetingLoggEntry>, reqwest::Error> {
+    ) -> Result<Vec<GreetingLoggEntry>, E2EError> {
         let response = self
             .client
             .get(format!("{}/log", &self.url))
@@ -63,8 +61,8 @@ impl GreetingApi for GreetingApiClient {
         } else {
             let status = response.error_for_status_ref().unwrap_err();
             let error_message = response.text().await?;
-            error!("GreetingApiClient.get_log_entries: {}", error_message);
-            Err(status)
+            Err(E2EError::ClientError(format!("Status: {}, message:{}", status, error_message)))
+
         }
     }
 }

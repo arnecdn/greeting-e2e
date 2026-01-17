@@ -3,11 +3,10 @@ use crate::greeting_api::GreetingApiClient;
 use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, TestTask};
 use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
-use log::error;
+use log::{debug, error, info};
 use std::collections::HashMap;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use tracing::{debug, info};
 
 mod api;
 mod greeting_api;
@@ -20,40 +19,36 @@ async fn main() -> Result<(), E2EError> {
     let args = CliArgs::parse();
 
     let logger =
-        env_logger::Builder::from_env(env_logger::Env::from(args.logging))
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(args.logging))
             .build();
-
-
-
-    let cfg = load_e2e_config(&args.config_path)?;
-    info!("Loaded E2E config: {:?}", cfg);
-
-    if cfg.num_iterations <= 0 {
-        error!("Invalid num_iterations: {}", cfg.num_iterations);
-        return Ok(());
-    }
-    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
-    let greeting_receiver_client =
-        GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
-
+    let level = logger.filter();
+    log::set_max_level(level);
     let multi_progress = MultiProgress::new();
     LogWrapper::new(multi_progress.clone(), logger)
         .try_init()
         .unwrap();
 
-    let verified_tasks = execute_e2e_test(
-        multi_progress,
+    let cfg = load_e2e_config(&args.config_path)?;
+
+    if cfg.num_iterations <= 0 {
+        error!("Invalid num_iterations: {}", cfg.num_iterations);
+        return Err(E2EError::GeneralError("Invalid num_iterations".to_string()));
+    }
+
+    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
+    let greeting_receiver_client =
+        GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
+
+    info!("Starting E2E test with {} iterations", cfg.num_iterations);
+
+    execute_e2e_test(
+        multi_progress.clone(),
         cfg,
         greeting_api_client,
         greeting_receiver_client,
         generate_random_message,
     )
-    .await;
-
-    match verified_tasks {
-        Ok(v) => print_test_result(&v),
-        Err(e) => error!("{}", e),
-    }
+    .await?;
 
     Ok(())
 }
@@ -72,15 +67,15 @@ pub(crate) struct CliArgs {
 
     /// Enable debug mode
     #[arg(
-        short = 'd',
-        long = "debug",
-        env = "greeting-e2e-test-debug",
+        short = 'l',
+        long = "log-level",
+        env = "greeting-e2e-test-log-level",
         default_value = "info"
     )]
     pub logging: String,
 }
 
-fn print_test_result(tasks: &HashMap<String, TestTask>) {
+fn _print_test_result(tasks: &HashMap<String, TestTask>) {
     info!("Successfully verified {} test-tasks", &tasks.len());
     for ctx in tasks {
         let msg = &ctx.1.message;

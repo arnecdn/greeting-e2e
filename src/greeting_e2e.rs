@@ -2,8 +2,7 @@ use crate::api::E2ETestConfig;
 use chrono::{DateTime, Utc};
 use confy::ConfyError;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::error;
-use reqwest::Error;
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -11,7 +10,6 @@ use thiserror::Error;
 use tokio::time;
 use tokio::time::timeout;
 use tracing::metadata::ParseLevelError;
-use tracing::{debug, info};
 use uuid::Uuid;
 
 pub async fn execute_e2e_test<E, F, G>(
@@ -30,35 +28,56 @@ where
         Some(v) => v.id,
         None => 0,
     };
-    info!("Log-entry offset-id: {}", offset);
 
-    let task_list = generate_test_tasks(multi_progress.clone(), cfg.num_iterations, message_generator);
-    info!("Generated {} test tasks", &task_list.len());
+    let task_list = generate_test_tasks(
+        multi_progress.clone(),
+        message_generator,
+        cfg.num_iterations,
+    );
 
-    let sent_test_tasks = send_messages(multi_progress.clone(), task_list, receiver_client).await;
-    info!("Sent {} test tasks", &sent_test_tasks.len());
+    let sent_test_tasks = send_messages(
+        multi_progress.clone(),
+        receiver_client,
+        cfg.num_iterations,
+        task_list,
+    )
+    .await;
 
-    verify_tasks(multi_progress, api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
+    verify_tasks(
+        multi_progress,
+        api_client,
+        offset,
+        cfg.greeting_log_limit,
+        cfg.num_iterations,
+        sent_test_tasks,
+    )
+    .await
 }
 
-fn generate_test_tasks<G>(mp: MultiProgress, num_iterations: u16, message_generator: G) -> Vec<TestTask>
+fn generate_test_tasks<G>(
+    mp: MultiProgress,
+    message_generator: G,
+    num_iterations: u16,
+) -> Vec<TestTask>
 where
     G: Fn() -> GreetingCmd,
 {
     let pb = mp.add(ProgressBar::new(num_iterations as u64));
-    pb.set_prefix("Generated tasks");
 
+    pb.set_prefix(format!("{:<24}", "Generated tasks"));
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "blue"))
             .unwrap()
-            .progress_chars("█  "),
+            .progress_chars("█ "),
     );
-    pb.set_message(format!("{:3}%", 100 * pb.position()/ num_iterations as u64));
+    // pb.set_message(format!(
+    //     "{}",
+    //     100 * pb.position() / num_iterations as u64
+    // ));
 
     let generated_tasks = (0..num_iterations)
         .map(|_| message_generator())
         .map(|m| TestTask {
-            external_reference: m.external_reference.to_string(),
             message: m,
             message_id: None,
             greeting_logg_entry: None,
@@ -66,11 +85,15 @@ where
         .fold(vec![], |mut acc, t| {
             acc.push(t);
             pb.inc(1);
-            pb.set_message(format!("{:3}%", 100 * pb.position()/ num_iterations as u64));
+            pb.set_message(format!(
+                "{} generated",
+                pb.position()
+            ));
             acc
         });
-    pb.finish_with_message("100%");
-    mp.println("Done!").unwrap();
+    pb.abandon_with_message(format!(
+        "{} generated",
+        pb.position()));
     generated_tasks
 }
 
@@ -86,28 +109,32 @@ pub fn generate_random_message() -> GreetingCmd {
 }
 async fn send_messages<F>(
     mp: MultiProgress,
-    task_list: Vec<TestTask>,
     greeting_receiver_client: F,
+    number_of_test_tasks: u16,
+    task_list: Vec<TestTask>,
 ) -> HashMap<String, TestTask>
 where
     F: GreetingReceiver,
 {
-    let number_of_test_tasks = task_list.len();
-    let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb.set_prefix("Sending test tasks");
+    let pb_sent = mp.add(ProgressBar::new(number_of_test_tasks as u64));
+    pb_sent.set_prefix(format!("{:<24}", "Sent test tasks"));
 
-    pb.set_style(
+    pb_sent.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
             .unwrap()
-            .progress_chars("█  "),
+            .progress_chars("█ "),
     );
 
-    pb.set_message(format!("{:3}%", 100 * pb.position()/ number_of_test_tasks as u64));
+    // pb_sent.set_message(format!(
+    //     "{} sent",
+    //     pb_sent.position()
+    // ));
+
 
     let mut tasks = HashMap::new();
 
     for task in task_list {
-        debug!("Sending message: {:?}", &task.message.external_reference);
+
         let resp = greeting_receiver_client.send(task.message.clone()).await;
 
         match resp {
@@ -115,17 +142,27 @@ where
                 let mut performed_task = TestTask::from(task);
                 performed_task.message_id = Some(v.message_id.to_string());
                 tasks.insert(v.message_id, performed_task);
-                pb.inc(1);
-                pb.set_message(format!("{:3}%", 100 * tasks.len() / &number_of_test_tasks));
+                pb_sent.inc(1);
+                pb_sent.set_message(format!(
+                    "{} sent",
+                    pb_sent.position()
+                ));
 
             }
-            Err(e) => error!(
-                "Failed sending message.external_reference: {}, error: {:?}",
-                task.external_reference, e
-            ),
+            Err(_) => {
+
+                // error!(
+                //     "Failed sending message.external_reference: {}, error: {:?}",
+                //     task.external_reference, e
+                // );
+            }
         }
     }
-    pb.finish_with_message("100%");
+    // pb_sent.finish();
+    pb_sent.abandon_with_message(format!(
+        "{} sent",
+        pb_sent.position()));
+
     tasks
 }
 
@@ -134,6 +171,7 @@ async fn verify_tasks<E>(
     greeting_api_client: E,
     offset: i64,
     logg_limit: u16,
+    number_of_test_tasks: u16,
     mut tasks: HashMap<String, TestTask>,
 ) -> Result<HashMap<String, TestTask>, E2EError>
 where
@@ -142,9 +180,8 @@ where
     const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
     let mut current_offset = offset;
 
-    let number_of_test_tasks = tasks.len();
     let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb.set_prefix("Verifying test tasks");
+    pb.set_prefix(format!("{:<24}", "Verifying test tasks"));
 
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "green"))
@@ -152,14 +189,14 @@ where
             .progress_chars("█  "),
     );
 
-    pb.set_message(format!("{:3}%", 100 * pb.position()/ number_of_test_tasks as u64));
+    // pb.set_message(format!(
+    //     "{} verified",
+    //     pb.position()
+    // ));
 
     let verified_tasks = timeout(
         Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
         async {
-
-
-
             while tasks.iter().any(|e| e.1.greeting_logg_entry.is_none()) {
                 let log_entries = greeting_api_client
                     .get_log_entries(current_offset + 1, logg_limit)
@@ -181,13 +218,18 @@ where
                         entry.greeting_logg_entry = Some(log_entry.clone());
                         pb.inc(1);
 
-                        pb.set_message(format!("{:3}%", 100 * pb.position() / number_of_test_tasks as u64));
+                        pb.set_message(format!(
+                            "{} verified",
+                            pb.position()
+                        ));
                     }
 
                     current_offset = log_entry.id;
                 }
             }
-            pb.finish_with_message("100%");
+            pb.abandon_with_message(format!(
+                "{} verified",
+                pb.position()));();
             Ok::<HashMap<String, TestTask>, E2EError>(tasks)
         },
     )
@@ -199,19 +241,18 @@ where
 
 #[derive(Debug, Clone)]
 pub(crate) struct TestTask {
-    pub external_reference: String,
     pub message: GreetingCmd,
     pub message_id: Option<String>,
     pub greeting_logg_entry: Option<GreetingLoggEntry>,
 }
 
 pub trait GreetingApi {
-    async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, reqwest::Error>;
+    async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, E2EError>;
     async fn get_log_entries(
         &self,
         offset: i64,
         limit: u16,
-    ) -> Result<Vec<GreetingLoggEntry>, reqwest::Error>;
+    ) -> Result<Vec<GreetingLoggEntry>, E2EError>;
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -231,7 +272,7 @@ pub struct GreetingLoggEntry {
 }
 
 pub trait GreetingReceiver {
-    async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error>;
+    async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, E2EError>;
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -257,7 +298,11 @@ pub enum E2EError {
     #[error("E2E config error: {0}")]
     LoggParseError(#[from] ParseLevelError),
     #[error("Client error: {0}")]
-    ClientError(#[from] reqwest::Error),
+    ClientError(String),
+    #[error("Client error: {0}")]
+    ClientHttpError(#[from] reqwest::Error),
     #[error("Timeout error: {0}")]
     TimeoutError(String),
+    #[error("General error: {0}")]
+    GeneralError(String),
 }

@@ -1,7 +1,6 @@
-use crate::greeting_e2e::{GreetingCmd, GreetingReceiver, GreetingResponse};
-use log::error;
+use crate::greeting_e2e::{E2EError, GreetingCmd, GreetingReceiver, GreetingResponse};
 use reqwest::header::{HeaderMap, CONTENT_TYPE};
-use reqwest::{Client, Error, Url};
+use reqwest::{Client, Url};
 
 pub struct GreetingReceiverClient {
     client: Client,
@@ -23,7 +22,7 @@ impl GreetingReceiverClient {
     }
 }
 impl GreetingReceiver for GreetingReceiverClient {
-    async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, Error> {
+    async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, E2EError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
@@ -40,8 +39,7 @@ impl GreetingReceiver for GreetingReceiverClient {
         } else {
             let status = response.error_for_status_ref().unwrap_err();
             let error_message = response.text().await?;
-            error!("{}", error_message);
-            Err(status)
+            Err(E2EError::ClientError(format!("Status: {}, message:{}", status, error_message)))
         }
     }
 }
