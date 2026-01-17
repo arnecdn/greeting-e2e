@@ -64,12 +64,13 @@ where
 {
     let pb = mp.add(ProgressBar::new(num_iterations as u64));
 
-    pb.set_prefix(format!("{:<24}", "Generated tasks"));
+    pb.set_prefix(format!("{:<10}", "Generating"));
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "blue"))
             .unwrap()
             .progress_chars("█ "),
     );
+    let start_time = std::time::Instant::now();
 
     let generated_tasks = (0..num_iterations)
         .map(|_| message_generator())
@@ -82,14 +83,17 @@ where
             acc.push(t);
             pb.inc(1);
             pb.set_message(format!(
-                "{} generated",
-                pb.position()
+                "{} generated in {:?}",
+                pb.position(),
+                start_time.elapsed()
             ));
             acc
         });
     pb.abandon_with_message(format!(
-        "{} generated",
-        pb.position()));
+        "{} generated in {:?}",
+        pb.position(),
+        start_time.elapsed()
+    ));
     generated_tasks
 }
 
@@ -113,7 +117,7 @@ where
     F: GreetingReceiver,
 {
     let pb_sent = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb_sent.set_prefix(format!("{:<24}", "Sent test tasks"));
+    pb_sent.set_prefix(format!("{:<10}", "Sending"));
 
     pb_sent.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
@@ -122,6 +126,7 @@ where
     );
 
     let mut tasks = HashMap::new();
+    let start_time = std::time::Instant::now();
 
     for task in task_list {
         let resp = greeting_receiver_client.send(task.message.clone()).await;
@@ -133,20 +138,20 @@ where
                 tasks.insert(v.message_id, performed_task);
                 pb_sent.inc(1);
                 pb_sent.set_message(format!(
-                    "{} sent",
-                    pb_sent.position()
+                    "{} sent in {:?}",
+                    pb_sent.position(),
+                    start_time.elapsed()
                 ));
-
             }
-            Err(_) => {
-
-            }
+            Err(_) => {}
         }
     }
-    // pb_sent.finish();
+
     pb_sent.abandon_with_message(format!(
-        "{} sent",
-        pb_sent.position()));
+        "{} sent in {:?}",
+        pb_sent.position(),
+        start_time.elapsed()
+    ));
 
     tasks
 }
@@ -166,14 +171,19 @@ where
     let mut current_offset = offset;
 
     let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb.set_prefix(format!("{:<24}", "Verifying test tasks"));
+    pb.set_prefix(format!("{:<10}", "Verifying"));
 
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "green"))
             .unwrap()
             .progress_chars("█  "),
     );
-
+    let start_time = std::time::Instant::now();
+    pb.set_message(format!(
+        "{} verified in {:?}",
+        pb.position(),
+        start_time.elapsed()
+    ));
     let verified_tasks = timeout(
         Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
         async {
@@ -199,8 +209,9 @@ where
                         pb.inc(1);
 
                         pb.set_message(format!(
-                            "{} verified",
-                            pb.position()
+                            "{} verified in {:?}",
+                            pb.position(),
+                            start_time.elapsed()
                         ));
                     }
 
@@ -208,8 +219,11 @@ where
                 }
             }
             pb.abandon_with_message(format!(
-                "{} verified",
-                pb.position()));();
+                "{} verified in {:?}",
+                pb.position(),
+                start_time.elapsed()
+            ));
+            ();
             Ok::<HashMap<String, TestTask>, E2EError>(tasks)
         },
     )
