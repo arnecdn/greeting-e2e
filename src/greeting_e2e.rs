@@ -70,10 +70,6 @@ where
             .unwrap()
             .progress_chars("█ "),
     );
-    // pb.set_message(format!(
-    //     "{}",
-    //     100 * pb.position() / num_iterations as u64
-    // ));
 
     let generated_tasks = (0..num_iterations)
         .map(|_| message_generator())
@@ -125,16 +121,9 @@ where
             .progress_chars("█ "),
     );
 
-    // pb_sent.set_message(format!(
-    //     "{} sent",
-    //     pb_sent.position()
-    // ));
-
-
     let mut tasks = HashMap::new();
 
     for task in task_list {
-
         let resp = greeting_receiver_client.send(task.message.clone()).await;
 
         match resp {
@@ -151,10 +140,6 @@ where
             }
             Err(_) => {
 
-                // error!(
-                //     "Failed sending message.external_reference: {}, error: {:?}",
-                //     task.external_reference, e
-                // );
             }
         }
     }
@@ -188,11 +173,6 @@ where
             .unwrap()
             .progress_chars("█  "),
     );
-
-    // pb.set_message(format!(
-    //     "{} verified",
-    //     pb.position()
-    // ));
 
     let verified_tasks = timeout(
         Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
