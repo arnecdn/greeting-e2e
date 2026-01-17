@@ -1,6 +1,7 @@
 use crate::api::E2ETestConfig;
 use chrono::{DateTime, Utc};
 use confy::ConfyError;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::error;
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 pub async fn execute_e2e_test<E, F, G>(
+    multi_progress: MultiProgress,
     cfg: E2ETestConfig,
     api_client: E,
     receiver_client: F,
@@ -30,20 +32,30 @@ where
     };
     info!("Log-entry offset-id: {}", offset);
 
-    let task_list = generate_test_tasks(cfg.num_iterations, message_generator);
+    let task_list = generate_test_tasks(multi_progress.clone(), cfg.num_iterations, message_generator);
     info!("Generated {} test tasks", &task_list.len());
 
-    let sent_test_tasks = send_messages(task_list, receiver_client).await;
+    let sent_test_tasks = send_messages(multi_progress.clone(), task_list, receiver_client).await;
     info!("Sent {} test tasks", &sent_test_tasks.len());
 
-    verify_tasks(api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
+    verify_tasks(multi_progress, api_client, offset, cfg.greeting_log_limit, sent_test_tasks).await
 }
 
-fn generate_test_tasks<G>(num_iterations: u16, message_generator: G) -> Vec<TestTask>
+fn generate_test_tasks<G>(mp: MultiProgress, num_iterations: u16, message_generator: G) -> Vec<TestTask>
 where
     G: Fn() -> GreetingCmd,
 {
-    (0..num_iterations)
+    let pb = mp.add(ProgressBar::new(num_iterations as u64));
+    pb.set_prefix("Generated tasks");
+
+    pb.set_style(
+        ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "blue"))
+            .unwrap()
+            .progress_chars("█  "),
+    );
+    pb.set_message(format!("{:3}%", 100 * pb.position()/ num_iterations as u64));
+
+    let generated_tasks = (0..num_iterations)
         .map(|_| message_generator())
         .map(|m| TestTask {
             external_reference: m.external_reference.to_string(),
@@ -53,8 +65,13 @@ where
         })
         .fold(vec![], |mut acc, t| {
             acc.push(t);
+            pb.inc(1);
+            pb.set_message(format!("{:3}%", 100 * pb.position()/ num_iterations as u64));
             acc
-        })
+        });
+    pb.finish_with_message("100%");
+    mp.println("Done!").unwrap();
+    generated_tasks
 }
 
 pub fn generate_random_message() -> GreetingCmd {
@@ -68,12 +85,25 @@ pub fn generate_random_message() -> GreetingCmd {
     }
 }
 async fn send_messages<F>(
+    mp: MultiProgress,
     task_list: Vec<TestTask>,
     greeting_receiver_client: F,
 ) -> HashMap<String, TestTask>
 where
     F: GreetingReceiver,
 {
+    let number_of_test_tasks = task_list.len();
+    let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
+    pb.set_prefix("Sending test tasks");
+
+    pb.set_style(
+        ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
+            .unwrap()
+            .progress_chars("█  "),
+    );
+
+    pb.set_message(format!("{:3}%", 100 * pb.position()/ number_of_test_tasks as u64));
+
     let mut tasks = HashMap::new();
 
     for task in task_list {
@@ -85,6 +115,9 @@ where
                 let mut performed_task = TestTask::from(task);
                 performed_task.message_id = Some(v.message_id.to_string());
                 tasks.insert(v.message_id, performed_task);
+                pb.inc(1);
+                pb.set_message(format!("{:3}%", 100 * tasks.len() / &number_of_test_tasks));
+
             }
             Err(e) => error!(
                 "Failed sending message.external_reference: {}, error: {:?}",
@@ -92,10 +125,12 @@ where
             ),
         }
     }
+    pb.finish_with_message("100%");
     tasks
 }
 
 async fn verify_tasks<E>(
+    mp: MultiProgress,
     greeting_api_client: E,
     offset: i64,
     logg_limit: u16,
@@ -107,21 +142,28 @@ where
     const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
     let mut current_offset = offset;
 
+    let number_of_test_tasks = tasks.len();
+    let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
+    pb.set_prefix("Verifying test tasks");
+
+    pb.set_style(
+        ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "green"))
+            .unwrap()
+            .progress_chars("█  "),
+    );
+
+    pb.set_message(format!("{:3}%", 100 * pb.position()/ number_of_test_tasks as u64));
+
     let verified_tasks = timeout(
         Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
         async {
-            while tasks.iter().any(|e| e.1.greeting_logg_entry.is_none()) {
-                let log_entries_result = greeting_api_client
-                    .get_log_entries(current_offset + 1, logg_limit)
-                    .await
-                    .map_err(|e| E2EError::ClientError(e));
 
-                let log_entries = match log_entries_result {
-                    Ok(v) => v,
-                    Err(e) => {
-                        panic!("Error when verifying tasks: {}", e)
-                    }
-                };
+
+
+            while tasks.iter().any(|e| e.1.greeting_logg_entry.is_none()) {
+                let log_entries = greeting_api_client
+                    .get_log_entries(current_offset + 1, logg_limit)
+                    .await?;
 
                 if log_entries.is_empty() {
                     time::sleep(Duration::from_secs(1)).await;
@@ -137,11 +179,15 @@ where
                 for log_entry in log_entries {
                     if let Some(entry) = tasks.get_mut(&log_entry.message_id) {
                         entry.greeting_logg_entry = Some(log_entry.clone());
+                        pb.inc(1);
+
+                        pb.set_message(format!("{:3}%", 100 * pb.position() / number_of_test_tasks as u64));
                     }
 
                     current_offset = log_entry.id;
                 }
             }
+            pb.finish_with_message("100%");
             Ok::<HashMap<String, TestTask>, E2EError>(tasks)
         },
     )

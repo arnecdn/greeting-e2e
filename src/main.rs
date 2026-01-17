@@ -5,8 +5,8 @@ use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
 use log::error;
 use std::collections::HashMap;
-use std::str::FromStr;
-use tracing::Level;
+use indicatif::MultiProgress;
+use indicatif_log_bridge::LogWrapper;
 use tracing::{debug, info};
 
 mod api;
@@ -19,9 +19,11 @@ async fn main() -> Result<(), E2EError> {
     // FmtSubscriber logs to stdout by default
     let args = CliArgs::parse();
 
-    tracing_subscriber::fmt()
-        .with_max_level(Level::from_str(&args.logging)?)
-        .init();
+    let logger =
+        env_logger::Builder::from_env(env_logger::Env::from(args.logging))
+            .build();
+
+
 
     let cfg = load_e2e_config(&args.config_path)?;
     info!("Loaded E2E config: {:?}", cfg);
@@ -34,7 +36,13 @@ async fn main() -> Result<(), E2EError> {
     let greeting_receiver_client =
         GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
 
+    let multi_progress = MultiProgress::new();
+    LogWrapper::new(multi_progress.clone(), logger)
+        .try_init()
+        .unwrap();
+
     let verified_tasks = execute_e2e_test(
+        multi_progress,
         cfg,
         greeting_api_client,
         greeting_receiver_client,
@@ -93,6 +101,7 @@ fn print_test_result(tasks: &HashMap<String, TestTask>) {
 
 #[cfg(test)]
 mod tests {
+    use indicatif::MultiProgress;
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
     use crate::greeting_e2e::{
@@ -128,6 +137,7 @@ mod tests {
             GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
 
         let result = execute_e2e_test(
+            MultiProgress::default(),
             test_config,
             greeting_api_client,
             greeting_receiver_client,
@@ -201,6 +211,7 @@ mod tests {
             GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
 
         let result = execute_e2e_test(
+            MultiProgress::default(),
             test_config,
             greeting_api_client,
             greeting_receiver_client,
