@@ -22,8 +22,7 @@ impl Default for E2ETestConfig {
 }
 
 pub(crate) fn load_e2e_config(path: &str) -> Result<E2ETestConfig, ConfyError> {
-    let config_path = Path::new(&path);
-    let cfg: E2ETestConfig = confy::load_path(config_path)?;
+    let cfg: E2ETestConfig = confy::load_path(Path::new(&path))?;
 
     Ok(cfg)
 }

@@ -3,10 +3,10 @@ use crate::greeting_api::GreetingApiClient;
 use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, TestTask};
 use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
-use log::{debug, error, info};
-use std::collections::HashMap;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
+use log::{debug, error, info};
+use std::collections::HashMap;
 
 mod api;
 mod greeting_api;
@@ -15,7 +15,6 @@ mod greeting_receiver;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError> {
-    // FmtSubscriber logs to stdout by default
     let args = CliArgs::parse();
 
     let logger =
@@ -23,6 +22,7 @@ async fn main() -> Result<(), E2EError> {
             .build();
     let level = logger.filter();
     log::set_max_level(level);
+    
     let multi_progress = MultiProgress::new();
     LogWrapper::new(multi_progress.clone(), logger)
         .try_init()
@@ -38,8 +38,6 @@ async fn main() -> Result<(), E2EError> {
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
     let greeting_receiver_client =
         GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
-
-    info!("Starting E2E test with {} iterations", cfg.num_iterations);
 
     execute_e2e_test(
         multi_progress.clone(),
@@ -96,14 +94,13 @@ fn _print_test_result(tasks: &HashMap<String, TestTask>) {
 
 #[cfg(test)]
 mod tests {
-    use indicatif::MultiProgress;
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
     use crate::greeting_e2e::{
-        execute_e2e_test, generate_random_message, GreetingCmd,
-        GreetingResponse,
+        execute_e2e_test, generate_random_message, GreetingCmd, GreetingResponse,
     };
     use crate::greeting_receiver::GreetingReceiverClient;
+    use indicatif::MultiProgress;
     use serde_json::json;
     use wiremock::matchers::{body_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};

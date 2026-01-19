@@ -103,12 +103,13 @@ pub fn generate_random_message() -> GreetingCmd {
     GreetingCmd {
         to: "arne".to_string(),
         from: "arne".to_string(),
-        heading: "chrismas carg".to_string(),
+        heading: "chrismas card".to_string(),
         message: "Happy christmas".to_string(),
         external_reference: Uuid::now_v7().to_string(),
         created: Utc::now(),
     }
 }
+
 async fn send_messages<F>(
     mp: MultiProgress,
     greeting_receiver_client: F,
@@ -118,16 +119,16 @@ async fn send_messages<F>(
 where
     F: GreetingReceiver,
 {
-    let pb_sent = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb_sent.set_prefix(format!("{:<10}", "Sending"));
+    let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
+    pb.set_prefix(format!("{:<10}", "Sending"));
 
-    pb_sent.set_style(
+    pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
             .unwrap()
             .progress_chars("█ "),
     );
 
-    let mut tasks = HashMap::new();
+    let mut sent_tasks = HashMap::new();
     let start_time = std::time::Instant::now();
 
     for task in task_list {
@@ -135,29 +136,32 @@ where
 
         match resp {
             Ok(v) => {
-                let mut performed_task = TestTask::from(task);
-                performed_task.message_id = Some(v.message_id.to_string());
-                tasks.insert(v.message_id, performed_task);
-                pb_sent.inc(1);
-                pb_sent.set_message(format!(
+                let mut sent_task = TestTask::from(task);
+                sent_task.message_id = Some(v.message_id.to_string());
+                sent_tasks.insert(v.message_id, sent_task);
+
+                pb.inc(1);
+                pb.set_message(format!(
                     "{}/{} sent in {:?}",
-                    pb_sent.position(),
+                    pb.position(),
                     number_of_test_tasks,
                     start_time.elapsed()
                 ));
             }
-            Err(e) => {error!("Failed: {:?}",e)}
+            Err(e) => {
+                error!("Failed sending message: {:?}", e)
+            }
         }
     }
 
-    pb_sent.abandon_with_message(format!(
+    pb.abandon_with_message(format!(
         "{}/{} sent in {:?}",
-        pb_sent.position(),
+        pb.position(),
         number_of_test_tasks,
         start_time.elapsed()
     ));
 
-    tasks
+    sent_tasks
 }
 
 async fn verify_tasks<E>(
