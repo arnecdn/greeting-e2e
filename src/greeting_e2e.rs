@@ -35,35 +35,23 @@ where
         cfg.num_iterations,
     );
 
-    let (send_result, verify_result) = tokio::join!(
-        send_messages(
-            multi_progress.clone(),
-            receiver_client,
-            cfg.num_iterations,
-            task_list.clone(),
-        ),
-        verify_tasks(
-            multi_progress,
-            api_client,
-            offset,
-            cfg.greeting_log_limit,
-            cfg.num_iterations,
-        )
-    );
+    let sent_test_tasks = send_messages(
+        multi_progress.clone(),
+        receiver_client,
+        cfg.num_iterations,
+        task_list,
+    )
+    .await;
 
-    let sent_tasks = send_result;
-    let verified_tasks = verify_result?;
-
-    // Merge sent tasks with verified tasks
-    let mut result = HashMap::new();
-
-    for (msg_id, _) in sent_tasks {
-        if let Some(verified) = verified_tasks.get(&msg_id) {
-            result.insert(msg_id, verified.clone());
-        }
-    }
-
-    Ok(result)
+    verify_tasks(
+        multi_progress,
+        api_client,
+        offset,
+        cfg.greeting_log_limit,
+        cfg.num_iterations,
+        sent_test_tasks,
+    )
+    .await
 }
 
 fn generate_test_tasks<G>(
@@ -158,7 +146,7 @@ where
                     start_time.elapsed()
                 ));
             }
-            Err(_) => {}
+            Err(e) => {error!("Failed: {:?}",e)}
         }
     }
 
@@ -178,13 +166,13 @@ async fn verify_tasks<E>(
     offset: i64,
     logg_limit: u16,
     number_of_test_tasks: u16,
+    mut tasks: HashMap<String, TestTask>,
 ) -> Result<HashMap<String, TestTask>, E2EError>
 where
     E: GreetingApi,
 {
-    const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 10;
+    const GREETING_API_RESPONSE_TIMEOUT_SECS: u64 = 30;
     let mut current_offset = offset;
-    let mut tasks: HashMap<String, TestTask> = HashMap::new();
 
     let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
     pb.set_prefix(format!("{:<10}", "Verifying"));
@@ -201,10 +189,13 @@ where
         number_of_test_tasks,
         start_time.elapsed()
     ));
+
     let verified_tasks = timeout(
         Duration::from_secs(GREETING_API_RESPONSE_TIMEOUT_SECS),
         async {
-            while tasks.len() < number_of_test_tasks as usize {
+            let mut verified_tasks = HashMap::new();
+
+            while tasks.is_empty() == false {
                 let log_entries = greeting_api_client
                     .get_log_entries(current_offset + 1, logg_limit)
                     .await?;
@@ -221,28 +212,23 @@ where
                 );
 
                 for log_entry in log_entries {
-                    let task = TestTask {
-                        message: GreetingCmd {
-                            external_reference: String::new(),
-                            to: String::new(),
-                            from: String::new(),
-                            heading: String::new(),
-                            message: String::new(),
-                            created: log_entry.created,
-                        },
-                        message_id: Some(log_entry.message_id.clone()),
-                        greeting_logg_entry: Some(log_entry.clone()),
-                    };
+                    let message_id = log_entry.message_id.to_string();
 
-                    tasks.insert(log_entry.message_id.clone(), task);
-                    pb.inc(1);
+                    if let Some(found_test_task_entry) = tasks.remove_entry(&message_id) {
+                        let key = found_test_task_entry.0;
+                        let mut verified_test_task = found_test_task_entry.1;
 
-                    pb.set_message(format!(
-                        "{}/{} verified in {:?}",
-                        pb.position(),
-                        number_of_test_tasks,
-                        start_time.elapsed()
-                    ));
+                        verified_test_task.greeting_logg_entry = Some(log_entry.clone());
+                        verified_tasks.insert(key, verified_test_task);
+
+                        pb.inc(1);
+                        pb.set_message(format!(
+                            "{}/{} verified in {:?}",
+                            pb.position(),
+                            number_of_test_tasks,
+                            start_time.elapsed()
+                        ));
+                    }
 
                     current_offset = log_entry.id;
                 }
@@ -253,8 +239,8 @@ where
                 number_of_test_tasks,
                 start_time.elapsed()
             ));
-            ();
-            Ok::<HashMap<String, TestTask>, E2EError>(tasks)
+
+            Ok::<HashMap<String, TestTask>, E2EError>(verified_tasks)
         },
     )
     .await
