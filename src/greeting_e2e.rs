@@ -64,7 +64,7 @@ where
 {
     let pb = mp.add(ProgressBar::new(num_iterations as u64));
 
-    pb.set_prefix(format!("{:<10}", "Generating"));
+    pb.set_prefix(format!("{:<20}", "Generating messages"));
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "blue"))
             .unwrap()
@@ -120,7 +120,7 @@ where
     F: GreetingReceiver,
 {
     let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb.set_prefix(format!("{:<10}", "Sending"));
+    pb.set_prefix(format!("{:<20}", "Sending messages"));
 
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "yellow"))
@@ -179,7 +179,7 @@ where
     let mut current_offset = offset;
 
     let pb = mp.add(ProgressBar::new(number_of_test_tasks as u64));
-    pb.set_prefix(format!("{:<10}", "Verifying"));
+    pb.set_prefix(format!("{:<20}", "Verifying messages"));
 
     pb.set_style(
         ProgressStyle::with_template(&format!("{{prefix:.bold}}▕{{bar:.{}}}▏{{msg}}", "green"))
@@ -187,6 +187,7 @@ where
             .progress_chars("█  "),
     );
     let start_time = std::time::Instant::now();
+
     pb.set_message(format!(
         "{}/{} verified in {:?}",
         pb.position(),
