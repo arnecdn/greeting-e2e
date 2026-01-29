@@ -1,12 +1,16 @@
 use crate::api::load_e2e_config;
 use crate::greeting_api::GreetingApiClient;
-use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, TestTask};
+use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, GreetingCmd, TestTask};
 use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info};
+use ollama_rs::generation::completion::request::GenerationRequest;
+use ollama_rs::Ollama;
+use serde_json::json;
 use std::collections::HashMap;
+use std::io::Write;
 
 mod api;
 mod greeting_api;
@@ -16,13 +20,15 @@ mod greeting_receiver;
 #[tokio::main]
 async fn main() -> Result<(), E2EError> {
     let args = CliArgs::parse();
+    let r = generate_messages_with_ollama().await.unwrap();
+    println!("{:?}", r);
 
     let logger =
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(args.logging))
             .build();
     let level = logger.filter();
     log::set_max_level(level);
-    
+
     let multi_progress = MultiProgress::new();
     LogWrapper::new(multi_progress.clone(), logger)
         .try_init()
@@ -49,6 +55,31 @@ async fn main() -> Result<(), E2EError> {
     .await?;
 
     Ok(())
+}
+async fn generate_messages_with_ollama() -> Result<Vec<GreetingCmd>, E2EError> {
+    let ollama = Ollama::default();
+    let model = "codellama".to_string();
+    let prompt = "Write a JSON aray with with 10 objects formatted as the following JSON struct. \
+                The values in the elements 'from', 'heading', 'message' and 'to' fields must be randomized.\
+                'created' should include datetime in with UTC, 'externalReference' should be a uuid v7.\
+                Only include the JSON array in the response.
+                'from': '',\
+                'heading': '',\
+                'message': '',\
+                'to': '',\
+                'created':'',\
+                'externalReference': ''\
+            ";
+
+    let req = GenerationRequest::new(model, prompt);
+    let res = ollama.generate(req).await;
+
+    let msg = match res {
+        Ok(v)=> v.response,
+        Err(e)=> return Err(E2EError::GeneralError(e.to_string()))
+    };
+    println!("{}", msg);
+    Ok(serde_json::from_str::<Vec<GreetingCmd>>(&*msg).unwrap())
 }
 
 /// Runs e2e test for greeting-solution.
