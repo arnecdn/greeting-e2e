@@ -1,6 +1,6 @@
 use crate::api::load_e2e_config;
 use crate::greeting_api::GreetingApiClient;
-use crate::greeting_e2e::{execute_e2e_test, generate_random_message, E2EError, GreetingCmd, TestTask};
+use crate::greeting_e2e::{execute_e2e_test, E2EError, GreetingCmd, MessageGenerator, TestTask};
 use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
 use indicatif::MultiProgress;
@@ -8,9 +8,7 @@ use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info};
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::Ollama;
-use serde_json::json;
 use std::collections::HashMap;
-use std::io::Write;
 
 mod api;
 mod greeting_api;
@@ -20,8 +18,6 @@ mod greeting_receiver;
 #[tokio::main]
 async fn main() -> Result<(), E2EError> {
     let args = CliArgs::parse();
-    let r = generate_messages_with_ollama().await.unwrap();
-    println!("{:?}", r);
 
     let logger =
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(args.logging))
@@ -44,22 +40,27 @@ async fn main() -> Result<(), E2EError> {
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
     let greeting_receiver_client =
         GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
-
+    let ollama_message_generator = OllamaMessageGenerator {};
+    ollama_message_generator.generate_messages(2).await.unwrap();
     execute_e2e_test(
         multi_progress.clone(),
         cfg,
         greeting_api_client,
         greeting_receiver_client,
-        generate_random_message,
+        ollama_message_generator
     )
     .await?;
 
     Ok(())
 }
-async fn generate_messages_with_ollama() -> Result<Vec<GreetingCmd>, E2EError> {
-    let ollama = Ollama::default();
-    let model = "codellama".to_string();
-    let prompt = "Write a JSON aray with with 10 objects formatted as the following JSON struct. \
+
+struct OllamaMessageGenerator;
+
+impl MessageGenerator for OllamaMessageGenerator {
+    async fn generate_messages(&self, num_messages: u16) -> Result<Vec<GreetingCmd>, E2EError> {
+        let ollama = Ollama::default();
+        let model = "codellama".to_string();
+        let prompt = format!("Write a JSON aray with with {} objects formatted as the following JSON struct. \
                 The values in the elements 'from', 'heading', 'message' and 'to' fields must be randomized.\
                 'created' should include datetime in with UTC, 'externalReference' should be a uuid v7.\
                 Only include the JSON array in the response.
@@ -69,17 +70,19 @@ async fn generate_messages_with_ollama() -> Result<Vec<GreetingCmd>, E2EError> {
                 'to': '',\
                 'created':'',\
                 'externalReference': ''\
-            ";
+            ", num_messages);
 
-    let req = GenerationRequest::new(model, prompt);
-    let res = ollama.generate(req).await;
+        let req = GenerationRequest::new(model, prompt);
 
-    let msg = match res {
-        Ok(v)=> v.response,
-        Err(e)=> return Err(E2EError::GeneralError(e.to_string()))
-    };
-    println!("{}", msg);
-    Ok(serde_json::from_str::<Vec<GreetingCmd>>(&*msg).unwrap())
+        let res = ollama.generate(req).await;
+
+        let msg = match res {
+            Ok(v) => v.response,
+            Err(e) => return Err(E2EError::GeneralError(e.to_string())),
+        };
+        println!("{}", msg);
+        Ok(serde_json::from_str::<Vec<GreetingCmd>>(&*msg).unwrap())
+    }
 }
 
 /// Runs e2e test for greeting-solution.
@@ -127,19 +130,39 @@ fn _print_test_result(tasks: &HashMap<String, TestTask>) {
 mod tests {
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
-    use crate::greeting_e2e::{
-        execute_e2e_test, generate_random_message, GreetingCmd, GreetingResponse,
-    };
+    use crate::greeting_e2e::{execute_e2e_test, E2EError, GreetingCmd, GreetingResponse, MessageGenerator};
+
     use crate::greeting_receiver::GreetingReceiverClient;
     use indicatif::MultiProgress;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use wiremock::matchers::{body_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct TestGenerator{msg: Value}
+
+    impl MessageGenerator for TestGenerator{
+        async fn generate_messages(&self, _n: u16) -> Result<Vec<GreetingCmd>, E2EError> {
+            Ok(
+                serde_json::from_value::<Vec<GreetingCmd>>(json!(vec![&self.msg]))
+                    .expect("Could not parse json"),
+            )
+        }
+    }
 
     #[tokio::test]
     async fn should_execute_e2e_for_0_task_successfully() {
         let greeting_receiver_server = MockServer::start().await;
         let greeting_api_server = MockServer::start().await;
+        let msg = json!({
+            "created": "2026-01-10T09:35:27.262Z",
+            "externalReference": "string",
+            "from": "string",
+            "heading": "string",
+            "message": "string",
+            "to": "string"
+        });
+
+        let test_generator = TestGenerator{msg};
 
         Mock::given(method("GET"))
             .and(path("/log/last"))
@@ -164,7 +187,7 @@ mod tests {
             test_config,
             greeting_api_client,
             greeting_receiver_client,
-            generate_random_message,
+            test_generator,
         )
         .await;
 
@@ -204,10 +227,9 @@ mod tests {
             "to": "string"
         });
 
-        let test_greeting_generator =
-            || serde_json::from_value::<GreetingCmd>(msg.clone()).expect("Could not parse json");
+        let test_generator = TestGenerator{msg:msg.clone()};
 
-        let greeting_msg = test_greeting_generator();
+
 
         let expected_response = GreetingResponse {
             message_id: "019b92bb-0088-77f1-8b09-5d56dfa72bc4".to_string(),
@@ -216,7 +238,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/greeting"))
-            .and(body_json(greeting_msg))
+            .and(body_json(msg.clone()))
             .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
             .mount(&greeting_receiver_server)
             .await;
@@ -238,7 +260,7 @@ mod tests {
             test_config,
             greeting_api_client,
             greeting_receiver_client,
-            test_greeting_generator,
+            test_generator,
         )
         .await;
 

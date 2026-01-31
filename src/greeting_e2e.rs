@@ -10,7 +10,6 @@ use thiserror::Error;
 use tokio::time;
 use tokio::time::timeout;
 use tracing::metadata::ParseLevelError;
-use uuid::Uuid;
 
 pub async fn execute_e2e_test<E, F, G>(
     multi_progress: MultiProgress,
@@ -22,7 +21,7 @@ pub async fn execute_e2e_test<E, F, G>(
 where
     E: GreetingApi,
     F: GreetingReceiver,
-    G: Fn() -> GreetingCmd,
+    G: MessageGenerator,
 {
     let offset = match api_client.get_last_log_entry().await? {
         Some(v) => v.id,
@@ -33,7 +32,7 @@ where
         multi_progress.clone(),
         message_generator,
         cfg.num_iterations,
-    );
+    ).await;
 
     let sent_test_tasks = send_messages(
         multi_progress.clone(),
@@ -54,13 +53,13 @@ where
     .await
 }
 
-fn generate_test_tasks<G>(
+async fn generate_test_tasks<G>(
     mp: MultiProgress,
     message_generator: G,
     num_iterations: u16,
 ) -> Vec<TestTask>
 where
-    G: Fn() -> GreetingCmd,
+    G: MessageGenerator
 {
     let pb = mp.add(ProgressBar::new(num_iterations as u64));
 
@@ -72,10 +71,11 @@ where
     );
     let start_time = std::time::Instant::now();
 
-    let generated_tasks = (0..num_iterations)
-        .map(|_| message_generator())
+    let generated_tasks = message_generator.generate_messages(num_iterations )
+        .await.unwrap()
+        .iter()
         .map(|m| TestTask {
-            message: m,
+            message: m.clone(),
             message_id: None,
             greeting_logg_entry: None,
         })
@@ -99,16 +99,16 @@ where
     generated_tasks
 }
 
-pub fn generate_random_message() -> GreetingCmd {
-    GreetingCmd {
-        to: "arne".to_string(),
-        from: "arne".to_string(),
-        heading: "chrismas card".to_string(),
-        message: "Happy christmas".to_string(),
-        external_reference: Uuid::now_v7().to_string(),
-        created: Utc::now(),
-    }
-}
+// pub fn generate_random_message() -> GreetingCmd {
+//     GreetingCmd {
+//         to: "arne".to_string(),
+//         from: "arne".to_string(),
+//         heading: "chrismas card".to_string(),
+//         message: "Happy christmas".to_string(),
+//         external_reference: Uuid::now_v7().to_string(),
+//         created: Utc::now(),
+//     }
+// }
 
 async fn send_messages<F>(
     mp: MultiProgress,
@@ -252,6 +252,10 @@ where
     .map_err(|_| E2EError::TimeoutError("Timeout waiting for new log entries".to_string()))??;
 
     Ok(verified_tasks)
+}
+
+pub trait MessageGenerator{
+    async fn generate_messages(&self, num_messages: u16) -> Result<Vec<GreetingCmd>, E2EError>;
 }
 
 #[derive(Debug, Clone)]
