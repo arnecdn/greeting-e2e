@@ -1,6 +1,6 @@
 greeting_receiver_url = "http://localhost:8080"
 greeting_api_url = "http://localhost:8081"
 greeting_log_limit = 100
-num_iterations = 1000
+num_iterations = 10
 
 

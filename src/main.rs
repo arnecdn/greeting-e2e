@@ -6,14 +6,14 @@ use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info};
-use ollama_rs::generation::completion::request::GenerationRequest;
-use ollama_rs::Ollama;
 use std::collections::HashMap;
+use ollama_msg_generator::OllamaMessageGenerator;
 
 mod api;
 mod greeting_api;
 mod greeting_e2e;
 mod greeting_receiver;
+mod ollama_msg_generator;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError> {
@@ -41,7 +41,7 @@ async fn main() -> Result<(), E2EError> {
     let greeting_receiver_client =
         GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
     let ollama_message_generator = OllamaMessageGenerator {};
-    ollama_message_generator.generate_messages(2).await.unwrap();
+
     execute_e2e_test(
         multi_progress.clone(),
         cfg,
@@ -54,36 +54,6 @@ async fn main() -> Result<(), E2EError> {
     Ok(())
 }
 
-struct OllamaMessageGenerator;
-
-impl MessageGenerator for OllamaMessageGenerator {
-    async fn generate_messages(&self, num_messages: u16) -> Result<Vec<GreetingCmd>, E2EError> {
-        let ollama = Ollama::default();
-        let model = "codellama".to_string();
-        let prompt = format!("Write a JSON aray with with {} objects formatted as the following JSON struct. \
-                The values in the elements 'from', 'heading', 'message' and 'to' fields must be randomized.\
-                'created' should include datetime in with UTC, 'externalReference' should be a uuid v7.\
-                Only include the JSON array in the response.
-                'from': '',\
-                'heading': '',\
-                'message': '',\
-                'to': '',\
-                'created':'',\
-                'externalReference': ''\
-            ", num_messages);
-
-        let req = GenerationRequest::new(model, prompt);
-
-        let res = ollama.generate(req).await;
-
-        let msg = match res {
-            Ok(v) => v.response,
-            Err(e) => return Err(E2EError::GeneralError(e.to_string())),
-        };
-        println!("{}", msg);
-        Ok(serde_json::from_str::<Vec<GreetingCmd>>(&*msg).unwrap())
-    }
-}
 
 /// Runs e2e test for greeting-solution.
 #[derive(Parser)]
