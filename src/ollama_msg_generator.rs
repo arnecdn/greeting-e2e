@@ -28,7 +28,6 @@ impl MessageGenerator for OllamaMessageGenerator {
             Ok(v) => v.response,
             Err(e) => return Err(E2EError::GeneralError(e.to_string())),
         };
-        println!("{}", msg);
         Ok(serde_json::from_str::<Vec<GreetingCmd>>(&*msg).unwrap())
     }
 }

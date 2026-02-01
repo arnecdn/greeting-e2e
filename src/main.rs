@@ -6,7 +6,6 @@ use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
 use log::{debug, error, info};
-use std::collections::HashMap;
 use ollama_msg_generator::OllamaMessageGenerator;
 
 mod api;
@@ -77,24 +76,6 @@ pub(crate) struct CliArgs {
     pub logging: String,
 }
 
-fn _print_test_result(tasks: &HashMap<String, TestTask>) {
-    info!("Successfully verified {} test-tasks", &tasks.len());
-    for ctx in tasks {
-        let msg = &ctx.1.message;
-
-        if let Some(gle) = &ctx.1.greeting_logg_entry.as_ref() {
-            debug!(
-                "Verified task.external_reference: {}, greeting.created: {:?}, logg-id: {:?}, log.created: {:?}",
-                msg.external_reference, msg.created, gle.id, gle.created
-            );
-        } else {
-            debug!(
-                "Task not verified task.external_reference: {}, greeting.created: {:?}",
-                msg.external_reference, msg.created
-            );
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

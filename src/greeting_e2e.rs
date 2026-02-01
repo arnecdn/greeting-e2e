@@ -99,16 +99,6 @@ where
     generated_tasks
 }
 
-// pub fn generate_random_message() -> GreetingCmd {
-//     GreetingCmd {
-//         to: "arne".to_string(),
-//         from: "arne".to_string(),
-//         heading: "chrismas card".to_string(),
-//         message: "Happy christmas".to_string(),
-//         external_reference: Uuid::now_v7().to_string(),
-//         created: Utc::now(),
-//     }
-// }
 
 async fn send_messages<F>(
     mp: MultiProgress,
@@ -254,15 +244,16 @@ where
     Ok(verified_tasks)
 }
 
-pub trait MessageGenerator{
-    async fn generate_messages(&self, num_messages: u16) -> Result<Vec<GreetingCmd>, E2EError>;
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct TestTask {
     pub message: GreetingCmd,
     pub message_id: Option<String>,
     pub greeting_logg_entry: Option<GreetingLoggEntry>,
+}
+
+pub trait MessageGenerator{
+    async fn generate_messages(&self, num_messages: u16) -> Result<Vec<GreetingCmd>, E2EError>;
 }
 
 pub trait GreetingApi {
