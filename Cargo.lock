@@ -711,6 +711,7 @@ dependencies = [
  "confy",
  "derive_more",
  "env_logger",
+ "futures",
  "indicatif",
  "indicatif-log-bridge",
  "log",

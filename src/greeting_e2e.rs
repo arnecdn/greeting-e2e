@@ -10,6 +10,7 @@ use thiserror::Error;
 use tokio::time;
 use tokio::time::timeout;
 use tracing::metadata::ParseLevelError;
+use uuid::Uuid;
 
 pub async fn execute_e2e_test<E, F, G>(
     multi_progress: MultiProgress,
@@ -32,7 +33,8 @@ where
         multi_progress.clone(),
         message_generator,
         cfg.num_iterations,
-    ).await;
+    )
+    .await;
 
     let sent_test_tasks = send_messages(
         multi_progress.clone(),
@@ -59,7 +61,7 @@ async fn generate_test_tasks<G>(
     num_iterations: u16,
 ) -> Vec<TestTask>
 where
-    G: MessageGenerator
+    G: MessageGenerator,
 {
     let pb = mp.add(ProgressBar::new(num_iterations as u64));
 
@@ -71,9 +73,29 @@ where
     );
     let start_time = std::time::Instant::now();
 
-    let generated_tasks = message_generator.generate_messages(num_iterations )
-        .await.unwrap()
-        .iter()
+    let awaiting_messages = (0..num_iterations)
+        .map(|_| message_generator.generate_message())
+        .collect::<Vec<_>>();
+
+    let generated_messages = futures::future::join_all(awaiting_messages)
+        .await
+        .into_iter();
+
+    let generated_tasks = generated_messages
+        .fold(vec![], |mut acc, res| {
+            if let Ok(v) = res {
+                acc.push(GreetingCmd {
+                    to: v.to,
+                    from: v.from,
+                    external_reference: Uuid::now_v7().to_string(),
+                    heading: v.heading,
+                    message: v.message,
+                    created: Utc::now(),
+                });
+            }
+            acc
+        })
+        .into_iter()
         .map(|m| TestTask {
             message: m.clone(),
             message_id: None,
@@ -98,7 +120,6 @@ where
     ));
     generated_tasks
 }
-
 
 async fn send_messages<F>(
     mp: MultiProgress,
@@ -244,7 +265,6 @@ where
     Ok(verified_tasks)
 }
 
-
 #[derive(Debug, Clone)]
 pub(crate) struct TestTask {
     pub message: GreetingCmd,
@@ -252,8 +272,16 @@ pub(crate) struct TestTask {
     pub greeting_logg_entry: Option<GreetingLoggEntry>,
 }
 
-pub trait MessageGenerator{
-    async fn generate_messages(&self, num_messages: u16) -> Result<Vec<GreetingCmd>, E2EError>;
+pub trait MessageGenerator {
+    async fn generate_message(&self) -> Result<GeneratedMessage, E2EError>;
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GeneratedMessage {
+    pub(crate) to: String,
+    pub(crate) from: String,
+    pub(crate) heading: String,
+    pub(crate) message: String,
 }
 
 pub trait GreetingApi {
@@ -265,13 +293,14 @@ pub trait GreetingApi {
     ) -> Result<Vec<GreetingLoggEntry>, E2EError>;
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct LoggQuery {
-    direction: String,
-    offset: i64,
-    limit: i8,
-}
+// #[derive(Serialize, Deserialize, Clone, Debug)]
+// #[serde(rename_all = "camelCase")]
+// pub struct LoggQuery {
+//     direction: String,
+//     offset: i64,
+//     limit: i8,
+// }
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GreetingLoggEntry {
@@ -315,4 +344,6 @@ pub enum E2EError {
     TimeoutError(String),
     #[error("General error: {0}")]
     GeneralError(String),
+    #[error("General error: {0}")]
+    GenerateMessageError(String),
 }

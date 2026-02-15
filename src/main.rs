@@ -1,11 +1,11 @@
 use crate::api::load_e2e_config;
 use crate::greeting_api::GreetingApiClient;
-use crate::greeting_e2e::{execute_e2e_test, E2EError, GreetingCmd, MessageGenerator, TestTask};
+use crate::greeting_e2e::{execute_e2e_test, E2EError};
 use crate::greeting_receiver::GreetingReceiverClient;
 use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use log::{debug, error, info};
+use log::{error};
 use ollama_msg_generator::OllamaMessageGenerator;
 
 mod api;
@@ -81,20 +81,20 @@ pub(crate) struct CliArgs {
 mod tests {
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
-    use crate::greeting_e2e::{execute_e2e_test, E2EError, GreetingCmd, GreetingResponse, MessageGenerator};
+    use crate::greeting_e2e::{execute_e2e_test, E2EError, GeneratedMessage, GreetingResponse, MessageGenerator};
 
     use crate::greeting_receiver::GreetingReceiverClient;
     use indicatif::MultiProgress;
     use serde_json::{json, Value};
-    use wiremock::matchers::{body_json, method, path, query_param};
+    use wiremock::matchers::{any, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     struct TestGenerator{msg: Value}
 
     impl MessageGenerator for TestGenerator{
-        async fn generate_messages(&self, _n: u16) -> Result<Vec<GreetingCmd>, E2EError> {
+        async fn generate_message(&self) -> Result<GeneratedMessage, E2EError> {
             Ok(
-                serde_json::from_value::<Vec<GreetingCmd>>(json!(vec![&self.msg]))
+                serde_json::from_value::<GeneratedMessage>(json!(&self.msg))
                     .expect("Could not parse json"),
             )
         }
@@ -180,8 +180,6 @@ mod tests {
 
         let test_generator = TestGenerator{msg:msg.clone()};
 
-
-
         let expected_response = GreetingResponse {
             message_id: "019b92bb-0088-77f1-8b09-5d56dfa72bc4".to_string(),
         };
@@ -189,7 +187,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/greeting"))
-            .and(body_json(msg.clone()))
+            .and(any())
             .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
             .mount(&greeting_receiver_server)
             .await;
