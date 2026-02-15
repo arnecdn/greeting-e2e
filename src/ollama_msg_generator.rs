@@ -2,7 +2,6 @@ use crate::greeting_e2e::{E2EError, GeneratedMessage, MessageGenerator};
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::Ollama;
 
-
 pub struct OllamaMessageGenerator;
 
 impl MessageGenerator for OllamaMessageGenerator {
@@ -29,15 +28,15 @@ impl MessageGenerator for OllamaMessageGenerator {
 
         let res = ollama.generate(req).await;
 
-        let msg = match res {
+        let generated_message = match res {
             Ok(v) => v.response,
-            Err(e) => return Err(E2EError::GeneralError(e.to_string())),
+            Err(e) => return Err(E2EError::GenerateMessageError(e.to_string())),
         };
 
         let mut json = false;
         let mut json_map = vec![];
 
-        for c in msg.lines() {
+        for c in generated_message.lines() {
             if c.trim().eq("{") {
                 json = true;
             } else if c.trim().eq("}") {
@@ -49,25 +48,30 @@ impl MessageGenerator for OllamaMessageGenerator {
             }
         }
         let m = json_map.concat();
-        Ok(serde_json::from_str::<GeneratedMessage>(&m).map_err(|e| E2EError::GenerateMessageError(e.to_string()))?)
+        Ok(serde_json::from_str::<GeneratedMessage>(&m)
+            .map_err(|e| E2EError::GenerateMessageError(e.to_string()))?)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use log::{error, info};
     use crate::greeting_e2e::MessageGenerator;
     use crate::ollama_msg_generator::OllamaMessageGenerator;
+    use futures::future::join_all;
+    use log::{error, info};
 
     #[tokio::test]
     async fn should_generate_message() {
+        let MESSAGE_COUNT = 10;
         let msg_generator = OllamaMessageGenerator {};
-        let awaiting_messages = msg_generator.generate_message();
 
-        let messages = awaiting_messages.await;
-        match messages {
-            Ok(v) => info!("{:?}",v),
-            Err(e) => error!("{:?}",e)
-        }
+        let awaiting_messages = (0..10)
+            .map(|_| msg_generator.generate_message())
+            .collect::<Vec<_>>();
+
+        let received = join_all(awaiting_messages).await;
+        let result_ok_count = received.iter().filter(|e| e.is_ok()).count();
+
+        assert_eq!(MESSAGE_COUNT, result_ok_count);
     }
 }

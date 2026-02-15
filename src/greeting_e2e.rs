@@ -1,6 +1,8 @@
 use crate::api::E2ETestConfig;
 use chrono::{DateTime, Utc};
 use confy::ConfyError;
+use future::join_all;
+use futures::future;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -77,11 +79,10 @@ where
         .map(|_| message_generator.generate_message())
         .collect::<Vec<_>>();
 
-    let generated_messages = futures::future::join_all(awaiting_messages)
-        .await
-        .into_iter();
+    let generated_messages = join_all(awaiting_messages).await;
 
-    let generated_tasks = generated_messages
+    let greeting_cmnds = generated_messages
+        .into_iter()
         .fold(vec![], |mut acc, res| {
             if let Ok(v) = res {
                 acc.push(GreetingCmd {
@@ -94,7 +95,9 @@ where
                 });
             }
             acc
-        })
+        });
+    
+    let generated_tasks = greeting_cmnds
         .into_iter()
         .map(|m| TestTask {
             message: m.clone(),
@@ -112,6 +115,7 @@ where
             ));
             acc
         });
+
     pb.abandon_with_message(format!(
         "{}/{} generated in {:?}",
         pb.position(),
