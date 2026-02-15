@@ -1,7 +1,23 @@
 use crate::greeting_e2e::{E2EError, GeneratedMessage, MessageGenerator};
 use ollama_rs::generation::completion::request::GenerationRequest;
 use ollama_rs::Ollama;
+use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LocalMessageGenerator;
+
+impl MessageGenerator for LocalMessageGenerator {
+    async fn generate_message(&self) -> Result<GeneratedMessage, E2EError> {
+        Ok(GeneratedMessage {
+            to: String::from("Greeting recipient"),
+            from: String::from("Greeting sender"),
+            heading: String::from("Greeting heading"),
+            message: String::from("Greeting main message"),
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OllamaMessageGenerator;
 
 impl MessageGenerator for OllamaMessageGenerator {
@@ -29,7 +45,7 @@ impl MessageGenerator for OllamaMessageGenerator {
         let res = ollama.generate(req).await;
 
         let message_as_json = match res {
-            Ok(v) => Self::parse_message(v.response),
+            Ok(v) => parse_message(v.response),
             Err(e) => return Err(E2EError::GenerateMessageError(e.to_string())),
         };
 
@@ -38,31 +54,29 @@ impl MessageGenerator for OllamaMessageGenerator {
     }
 }
 
-impl OllamaMessageGenerator {
-    fn parse_message(generated_message: String) -> String {
-        let mut json = false;
-        let mut json_map = vec![];
+fn parse_message(generated_message: String) -> String {
+    let mut json = false;
+    let mut json_map = vec![];
 
-        for c in generated_message.lines() {
-            if c.trim().eq("{") {
-                json = true;
-            } else if c.trim().eq("}") {
-                json = false;
-                json_map.push(c);
-            }
-            if json {
-                json_map.push(c);
-            }
+    for c in generated_message.lines() {
+        if c.trim().eq("{") {
+            json = true;
+        } else if c.trim().eq("}") {
+            json = false;
+            json_map.push(c);
         }
-        let m = json_map.concat();
-        m
+        if json {
+            json_map.push(c);
+        }
     }
+    let m = json_map.concat();
+    m
 }
 
 #[cfg(test)]
 mod tests {
     use crate::greeting_e2e::MessageGenerator;
-    use crate::ollama_msg_generator::OllamaMessageGenerator;
+    use crate::message_generators::OllamaMessageGenerator;
     use futures::future::join_all;
 
     #[tokio::test]

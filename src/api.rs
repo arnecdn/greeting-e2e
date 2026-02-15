@@ -1,6 +1,7 @@
 use confy::ConfyError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use crate::api::Generator::Local;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct E2ETestConfig {
@@ -8,6 +9,13 @@ pub struct E2ETestConfig {
     pub greeting_api_url: String,
     pub greeting_log_limit: u16,
     pub num_iterations: u16,
+    pub message_generator: Generator
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Generator{
+    Ollama,
+    Local
 }
 
 impl Default for E2ETestConfig {
@@ -17,6 +25,7 @@ impl Default for E2ETestConfig {
             greeting_api_url: "http://localhost:8080".to_string(),
             greeting_log_limit: 0,
             num_iterations: 0,
+            message_generator: Local
         }
     }
 }

@@ -1,18 +1,19 @@
-use crate::api::load_e2e_config;
+use crate::api::{load_e2e_config, Generator};
 use crate::greeting_api::GreetingApiClient;
 use crate::greeting_e2e::{execute_e2e_test, E2EError};
 use crate::greeting_receiver::GreetingReceiverClient;
+use crate::message_generators::LocalMessageGenerator;
 use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use log::{error};
-use ollama_msg_generator::OllamaMessageGenerator;
+use log::error;
+use message_generators::OllamaMessageGenerator;
 
 mod api;
 mod greeting_api;
 mod greeting_e2e;
 mod greeting_receiver;
-mod ollama_msg_generator;
+mod message_generators;
 
 #[tokio::main]
 async fn main() -> Result<(), E2EError> {
@@ -39,20 +40,32 @@ async fn main() -> Result<(), E2EError> {
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
     let greeting_receiver_client =
         GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
-    let ollama_message_generator = OllamaMessageGenerator {};
 
-    execute_e2e_test(
-        multi_progress.clone(),
-        cfg,
-        greeting_api_client,
-        greeting_receiver_client,
-        ollama_message_generator
-    )
-    .await?;
+    match cfg.message_generator {
+        Generator::Ollama => {
+            execute_e2e_test(
+                multi_progress.clone(),
+                cfg,
+                greeting_api_client,
+                greeting_receiver_client,
+                OllamaMessageGenerator {},
+            )
+            .await?
+        }
+        Generator::Local => {
+            execute_e2e_test(
+                multi_progress.clone(),
+                cfg,
+                greeting_api_client,
+                greeting_receiver_client,
+                LocalMessageGenerator {},
+            )
+            .await?
+        }
+    };
 
     Ok(())
 }
-
 
 /// Runs e2e test for greeting-solution.
 #[derive(Parser)]
@@ -76,27 +89,29 @@ pub(crate) struct CliArgs {
     pub logging: String,
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::api::E2ETestConfig;
     use crate::greeting_api::GreetingApiClient;
-    use crate::greeting_e2e::{execute_e2e_test, E2EError, GeneratedMessage, GreetingResponse, MessageGenerator};
+    use crate::greeting_e2e::{
+        execute_e2e_test, E2EError, GeneratedMessage, GreetingResponse, MessageGenerator,
+    };
 
+    use crate::api::Generator::Local;
     use crate::greeting_receiver::GreetingReceiverClient;
     use indicatif::MultiProgress;
     use serde_json::{json, Value};
     use wiremock::matchers::{any, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct TestGenerator{msg: Value}
+    struct TestGenerator {
+        msg: Value,
+    }
 
-    impl MessageGenerator for TestGenerator{
+    impl MessageGenerator for TestGenerator {
         async fn generate_message(&self) -> Result<GeneratedMessage, E2EError> {
-            Ok(
-                serde_json::from_value::<GeneratedMessage>(json!(&self.msg))
-                    .expect("Could not parse json"),
-            )
+            Ok(serde_json::from_value::<GeneratedMessage>(json!(&self.msg))
+                .expect("Could not parse json"))
         }
     }
 
@@ -113,7 +128,7 @@ mod tests {
             "to": "string"
         });
 
-        let test_generator = TestGenerator{msg};
+        let test_generator = TestGenerator { msg };
 
         Mock::given(method("GET"))
             .and(path("/log/last"))
@@ -126,6 +141,7 @@ mod tests {
             greeting_api_url: greeting_api_server.uri(),
             greeting_log_limit: 0,
             num_iterations: 0,
+            message_generator: Local,
         };
 
         let greeting_api_client =
@@ -178,7 +194,7 @@ mod tests {
             "to": "string"
         });
 
-        let test_generator = TestGenerator{msg:msg.clone()};
+        let test_generator = TestGenerator { msg: msg.clone() };
 
         let expected_response = GreetingResponse {
             message_id: "019b92bb-0088-77f1-8b09-5d56dfa72bc4".to_string(),
@@ -197,6 +213,7 @@ mod tests {
             greeting_api_url: greeting_api_server.uri(),
             greeting_log_limit: 10,
             num_iterations: 1,
+            message_generator: Local,
         };
 
         let greeting_api_client =
