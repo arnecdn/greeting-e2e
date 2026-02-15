@@ -28,11 +28,18 @@ impl MessageGenerator for OllamaMessageGenerator {
 
         let res = ollama.generate(req).await;
 
-        let generated_message = match res {
-            Ok(v) => v.response,
+        let message_as_json = match res {
+            Ok(v) => Self::parse_message(v.response),
             Err(e) => return Err(E2EError::GenerateMessageError(e.to_string())),
         };
 
+        Ok(serde_json::from_str::<GeneratedMessage>(&message_as_json)
+            .map_err(|e| E2EError::GenerateMessageError(e.to_string()))?)
+    }
+}
+
+impl OllamaMessageGenerator {
+    fn parse_message(generated_message: String) -> String {
         let mut json = false;
         let mut json_map = vec![];
 
@@ -48,8 +55,7 @@ impl MessageGenerator for OllamaMessageGenerator {
             }
         }
         let m = json_map.concat();
-        Ok(serde_json::from_str::<GeneratedMessage>(&m)
-            .map_err(|e| E2EError::GenerateMessageError(e.to_string()))?)
+        m
     }
 }
 
@@ -58,7 +64,6 @@ mod tests {
     use crate::greeting_e2e::MessageGenerator;
     use crate::ollama_msg_generator::OllamaMessageGenerator;
     use futures::future::join_all;
-    use log::{error, info};
 
     #[tokio::test]
     async fn should_generate_message() {
