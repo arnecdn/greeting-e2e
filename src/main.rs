@@ -31,11 +31,7 @@ async fn main() -> Result<(), E2EError> {
         .unwrap();
 
     let cfg = load_e2e_config(&args.config_path)?;
-
-    if cfg.num_iterations <= 0 {
-        error!("Invalid num_iterations: {}", cfg.num_iterations);
-        return Err(E2EError::GeneralError("Invalid num_iterations".to_string()));
-    }
+    cfg.valiate()?;
 
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
     let greeting_receiver_client =
@@ -52,7 +48,7 @@ async fn main() -> Result<(), E2EError> {
             )
             .await?
         }
-        Generator::Local => {
+        Generator::InMemory => {
             execute_e2e_test(
                 multi_progress.clone(),
                 cfg,
@@ -97,7 +93,7 @@ mod tests {
         execute_e2e_test, E2EError, GeneratedMessage, GreetingResponse, MessageGenerator,
     };
 
-    use crate::api::Generator::Local;
+    use crate::api::Generator::InMemory;
     use crate::greeting_receiver::GreetingReceiverClient;
     use indicatif::MultiProgress;
     use serde_json::{json, Value};
@@ -141,7 +137,7 @@ mod tests {
             greeting_api_url: greeting_api_server.uri(),
             greeting_log_limit: 0,
             num_iterations: 0,
-            message_generator: Local,
+            message_generator: InMemory,
         };
 
         let greeting_api_client =
@@ -213,7 +209,7 @@ mod tests {
             greeting_api_url: greeting_api_server.uri(),
             greeting_log_limit: 10,
             num_iterations: 1,
-            message_generator: Local,
+            message_generator: InMemory,
         };
 
         let greeting_api_client =

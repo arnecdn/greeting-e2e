@@ -1,7 +1,8 @@
+use crate::api::Generator::InMemory;
+use crate::greeting_e2e::E2EError;
 use confy::ConfyError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use crate::api::Generator::Local;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct E2ETestConfig {
@@ -9,13 +10,13 @@ pub struct E2ETestConfig {
     pub greeting_api_url: String,
     pub greeting_log_limit: u16,
     pub num_iterations: u16,
-    pub message_generator: Generator
+    pub message_generator: Generator,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum Generator{
+pub enum Generator {
     Ollama,
-    Local
+    InMemory,
 }
 
 impl Default for E2ETestConfig {
@@ -25,8 +26,18 @@ impl Default for E2ETestConfig {
             greeting_api_url: "http://localhost:8080".to_string(),
             greeting_log_limit: 0,
             num_iterations: 0,
-            message_generator: Local
+            message_generator: InMemory,
         }
+    }
+}
+
+impl E2ETestConfig {
+    pub fn valiate(&self) -> Result<(), E2EError> {
+        if self.num_iterations <= 0 {
+            return Err(E2EError::GeneralError("Invalid num_iterations".to_string()));
+        }
+
+        Ok(())
     }
 }
 
