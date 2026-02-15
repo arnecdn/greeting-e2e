@@ -81,22 +81,20 @@ where
 
     let generated_messages = join_all(awaiting_messages).await;
 
-    let greeting_cmnds = generated_messages
-        .into_iter()
-        .fold(vec![], |mut acc, res| {
-            if let Ok(v) = res {
-                acc.push(GreetingCmd {
-                    to: v.to,
-                    from: v.from,
-                    external_reference: Uuid::now_v7().to_string(),
-                    heading: v.heading,
-                    message: v.message,
-                    created: Utc::now(),
-                });
-            }
-            acc
-        });
-    
+    let greeting_cmnds = generated_messages.into_iter().fold(vec![], |mut acc, res| {
+        if let Ok(v) = res {
+            acc.push(GreetingCmd {
+                to: v.to,
+                from: v.from,
+                external_reference: Uuid::now_v7().to_string(),
+                heading: v.heading,
+                message: v.message,
+                created: Utc::now(),
+            });
+        }
+        acc
+    });
+
     let generated_tasks = greeting_cmnds
         .into_iter()
         .map(|m| TestTask {
@@ -296,14 +294,6 @@ pub trait GreetingApi {
         limit: u16,
     ) -> Result<Vec<GreetingLoggEntry>, E2EError>;
 }
-
-// #[derive(Serialize, Deserialize, Clone, Debug)]
-// #[serde(rename_all = "camelCase")]
-// pub struct LoggQuery {
-//     direction: String,
-//     offset: i64,
-//     limit: i8,
-// }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialOrd, PartialEq, Ord, Eq)]
 #[serde(rename_all = "camelCase")]
