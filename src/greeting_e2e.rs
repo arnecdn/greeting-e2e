@@ -82,29 +82,10 @@ where
 
     let generated_messages = join_all(awaiting_messages).await;
 
-    let greeting_cmnds = generated_messages.into_iter().fold(vec![], |mut acc, res| {
+    let test_tasks = generated_messages.into_iter().fold(vec![], |mut acc, res| {
         if let Ok(v) = res {
-            acc.push(GreetingCmd {
-                to: v.to,
-                from: v.from,
-                external_reference: Uuid::now_v7().to_string(),
-                heading: v.heading,
-                message: v.message,
-                created: Utc::now(),
-            });
-        }
-        acc
-    });
+            let task = create_test_task(v);
 
-    let generated_tasks = greeting_cmnds
-        .into_iter()
-        .map(|m| TestTask {
-            message: m.clone(),
-            message_id: None,
-            greeting_logg_entry: None,
-        })
-        .fold(vec![], |mut acc, t| {
-            acc.push(t);
             pb.inc(1);
             pb.set_message(format!(
                 "{}/{} generated in {:?}",
@@ -112,8 +93,11 @@ where
                 num_iterations,
                 start_time.elapsed()
             ));
-            acc
-        });
+
+            acc.push(task);
+        }
+        acc
+    });
 
     pb.abandon_with_message(format!(
         "{}/{} generated in {:?}",
@@ -121,7 +105,25 @@ where
         num_iterations,
         start_time.elapsed()
     ));
-    generated_tasks
+
+    test_tasks
+}
+
+fn create_test_task(v: GeneratedMessage) -> TestTask {
+    let cmd = GreetingCmd {
+        to: v.to,
+        from: v.from,
+        external_reference: Uuid::now_v7().to_string(),
+        heading: v.heading,
+        message: v.message,
+        created: Utc::now(),
+    };
+
+    TestTask {
+        message: cmd,
+        message_id: None,
+        greeting_logg_entry: None,
+    }
 }
 
 async fn send_messages<F>(
