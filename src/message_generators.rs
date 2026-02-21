@@ -4,9 +4,9 @@ use ollama_rs::Ollama;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LocalMessageGenerator;
+pub struct InMemoryMessageGenerator;
 
-impl MessageGenerator for LocalMessageGenerator {
+impl MessageGenerator for InMemoryMessageGenerator {
     async fn generate_message(&self) -> Result<GeneratedMessage, E2EError> {
         Ok(GeneratedMessage {
             to: String::from("Greeting recipient"),

@@ -2,7 +2,7 @@ use crate::api::{load_e2e_config, Generator};
 use crate::greeting_api::GreetingApiClient;
 use crate::greeting_e2e::{execute_e2e_test, E2EError};
 use crate::greeting_receiver::GreetingReceiverClient;
-use crate::message_generators::LocalMessageGenerator;
+use crate::message_generators::InMemoryMessageGenerator;
 use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
@@ -54,7 +54,7 @@ async fn main() -> Result<(), E2EError> {
                 cfg,
                 greeting_api_client,
                 greeting_receiver_client,
-                LocalMessageGenerator {},
+                InMemoryMessageGenerator {},
             )
             .await?
         }
