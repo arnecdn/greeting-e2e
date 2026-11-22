@@ -78,6 +78,13 @@ This project includes a Makefile that automates the process of building the Dock
    ```sh
    minikube service <service-name>
    ```
+or
+By using Nginx for ingress, setup the following configuration to route requests to the Greeting Distributor service:
+
+```
+kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller
+kubectl -n ingress-nginx port-forward service/ingress-nginx-controller 8080:80
+```
 
    Replace `<service-name>` with the actual service name defined in your Kubernetes manifest.
 

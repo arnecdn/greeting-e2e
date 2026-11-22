@@ -6,7 +6,6 @@ use crate::message_generators::InMemoryMessageGenerator;
 use clap::Parser;
 use indicatif::MultiProgress;
 use indicatif_log_bridge::LogWrapper;
-use log::error;
 use message_generators::OllamaMessageGenerator;
 
 mod api;
@@ -35,7 +34,7 @@ async fn main() -> Result<(), E2EError> {
 
     let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
     let greeting_receiver_client =
-        GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string());
+        GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string(), cfg.greeting_receiver_host.to_string());
 
     match cfg.message_generator {
         Generator::Ollama => {
@@ -134,6 +133,7 @@ mod tests {
 
         let test_config = E2ETestConfig {
             greeting_receiver_url: greeting_receiver_server.uri(),
+            greeting_receiver_host: greeting_receiver_server.uri(),
             greeting_api_url: greeting_api_server.uri(),
             greeting_log_limit: 0,
             num_iterations: 0,
@@ -143,7 +143,7 @@ mod tests {
         let greeting_api_client =
             GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
         let greeting_receiver_client =
-            GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
+            GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string(), test_config.greeting_receiver_host.to_string());
 
         let result = execute_e2e_test(
             MultiProgress::default(),
@@ -206,6 +206,7 @@ mod tests {
 
         let test_config = E2ETestConfig {
             greeting_receiver_url: greeting_receiver_server.uri(),
+            greeting_receiver_host: greeting_api_server.uri(),
             greeting_api_url: greeting_api_server.uri(),
             greeting_log_limit: 10,
             num_iterations: 1,
@@ -215,7 +216,7 @@ mod tests {
         let greeting_api_client =
             GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
         let greeting_receiver_client =
-            GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string());
+            GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string(), test_config.greeting_receiver_host.to_string());
 
         let result = execute_e2e_test(
             MultiProgress::default(),

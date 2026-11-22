@@ -1,14 +1,15 @@
 use crate::greeting_e2e::{E2EError, GreetingCmd, GreetingReceiver, GreetingResponse};
-use reqwest::header::{HeaderMap, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, CONTENT_TYPE, HOST};
 use reqwest::{Client, Url};
 
 pub struct GreetingReceiverClient {
     client: Client,
     url: String,
+    host: String,
 }
 
 impl GreetingReceiverClient {
-    pub(crate) fn new_client(url: String) -> Self {
+    pub(crate) fn new_client(url: String, host: String) -> Self {
         Url::parse(&url).expect("Invalid url");
 
         GreetingReceiverClient {
@@ -18,6 +19,7 @@ impl GreetingReceiverClient {
                 .expect("Failed to build client"),
 
             url,
+            host,
         }
     }
 }
@@ -25,6 +27,7 @@ impl GreetingReceiver for GreetingReceiverClient {
     async fn send(&self, greeting: GreetingCmd) -> Result<GreetingResponse, E2EError> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        headers.insert(HOST, (&self.host).parse().unwrap());
 
         let response = self
             .client
@@ -77,7 +80,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let greeting_receiver_client = GreetingReceiverClient::new_client(mock_server.uri());
+        let greeting_receiver_client = GreetingReceiverClient::new_client(mock_server.uri(),"receiver".to_string());
         let greeting_response = greeting_receiver_client
             .send(greeting_msg)
             .await
