@@ -1,7 +1,8 @@
 greeting_receiver_url = "http://localhost:8080"
 greeting_receiver_host = "greeting-receiver.minikube"
-greeting_api_url = "http://localhost:8081"
+greeting_api_url = "http://localhost:8080"
+greeting_api_host = "greeting-api.minikube"
 greeting_log_limit = 100
-num_iterations = 1000
+num_iterations = 10
 message_generator = "InMemory"
 

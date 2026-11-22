@@ -82,6 +82,7 @@ or
 By using Nginx for ingress, setup the following configuration to route requests to the Greeting Distributor service:
 
 ```
+minikube addons enable ingress
 kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller
 kubectl -n ingress-nginx port-forward service/ingress-nginx-controller 8080:80
 ```

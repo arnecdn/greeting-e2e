@@ -1,12 +1,14 @@
 use crate::greeting_e2e::{E2EError, GreetingApi, GreetingLoggEntry};
 use reqwest::{Client, Url};
+use reqwest::header::{HeaderMap, CONTENT_TYPE, HOST};
 
 pub struct GreetingApiClient {
     client: Client,
     url: String,
+    host: String,
 }
 impl GreetingApiClient {
-    pub(crate) fn new_client(url: String) -> Self {
+    pub(crate) fn new_client(url: String, host: String) -> Self {
         Url::parse(&url).expect("Invalid url");
 
         GreetingApiClient {
@@ -15,14 +17,20 @@ impl GreetingApiClient {
                 .build()
                 .expect("Failed to build client"),
             url,
+            host,
         }
     }
 }
 impl GreetingApi for GreetingApiClient {
     async fn get_last_log_entry(&self) -> Result<Option<GreetingLoggEntry>, E2EError> {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        headers.insert(HOST, (&self.host).parse().unwrap());
+
         let response = self
             .client
             .get(format!("{}/log/last", &self.url))
+            .headers(headers)
             .send()
             .await?;
 
@@ -41,9 +49,14 @@ impl GreetingApi for GreetingApiClient {
         offset: i64,
         limit: u16,
     ) -> Result<Vec<GreetingLoggEntry>, E2EError> {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+        headers.insert(HOST, (&self.host).parse().unwrap());
+
         let response = self
             .client
             .get(format!("{}/log", &self.url))
+            .headers(headers)
             .query(&[
                 ("direction", "forward"),
                 ("offset", &offset.to_string()),
@@ -89,7 +102,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri());
+        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri(),mock_server.uri());
         let greeting_log_entry = greeting_api_client
             .get_last_log_entry()
             .await
@@ -108,7 +121,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri());
+        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri(), mock_server.uri());
         let greeting_log_entry = greeting_api_client
             .get_last_log_entry()
             .await
@@ -127,7 +140,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri());
+        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri(), mock_server.uri());
         let resp = greeting_api_client.get_last_log_entry().await;
 
         assert!(resp.is_err())
@@ -150,7 +163,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri());
+        let greeting_api_client = GreetingApiClient::new_client(mock_server.uri(), mock_server.uri());
         let resp = greeting_api_client
             .get_log_entries(1, 10)
             .await

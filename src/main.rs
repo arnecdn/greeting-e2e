@@ -32,7 +32,7 @@ async fn main() -> Result<(), E2EError> {
     let cfg = load_e2e_config(&args.config_path)?;
     cfg.valiate()?;
 
-    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string());
+    let greeting_api_client = GreetingApiClient::new_client(cfg.greeting_api_url.to_string(), cfg.greeting_api_host.to_string());
     let greeting_receiver_client =
         GreetingReceiverClient::new_client(cfg.greeting_receiver_url.to_string(), cfg.greeting_receiver_host.to_string());
 
@@ -135,13 +135,14 @@ mod tests {
             greeting_receiver_url: greeting_receiver_server.uri(),
             greeting_receiver_host: greeting_receiver_server.uri(),
             greeting_api_url: greeting_api_server.uri(),
+            greeting_api_host: greeting_api_server.uri(),
             greeting_log_limit: 0,
             num_iterations: 0,
             message_generator: InMemory,
         };
 
         let greeting_api_client =
-            GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
+            GreetingApiClient::new_client(test_config.greeting_api_url.to_string(), test_config.greeting_api_host.to_string());
         let greeting_receiver_client =
             GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string(), test_config.greeting_receiver_host.to_string());
 
@@ -208,13 +209,14 @@ mod tests {
             greeting_receiver_url: greeting_receiver_server.uri(),
             greeting_receiver_host: greeting_api_server.uri(),
             greeting_api_url: greeting_api_server.uri(),
+            greeting_api_host: greeting_api_server.uri(),
             greeting_log_limit: 10,
             num_iterations: 1,
             message_generator: InMemory,
         };
 
         let greeting_api_client =
-            GreetingApiClient::new_client(test_config.greeting_api_url.to_string());
+            GreetingApiClient::new_client(test_config.greeting_api_url.to_string(), test_config.greeting_api_host.to_string());
         let greeting_receiver_client =
             GreetingReceiverClient::new_client(test_config.greeting_receiver_url.to_string(), test_config.greeting_receiver_host.to_string());
 
